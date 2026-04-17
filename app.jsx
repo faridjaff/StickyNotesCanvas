@@ -782,6 +782,19 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
     }
   };
 
+  // For the header's link-count badge: only count links whose other endpoint
+  // is currently visible on this canvas. Otherwise the badge lies about the
+  // drawn arrows (e.g. a link to a note in a different folder the user isn't
+  // viewing right now).
+  const visibleIds = useMemo(() => new Set(notes.map(n => n.id)), [notes]);
+  const visibleLinksFor = useCallback((id) => {
+    return links.filter(l => {
+      if (l.from !== id && l.to !== id) return false;
+      const other = l.from === id ? l.to : l.from;
+      return visibleIds.has(other);
+    });
+  }, [links, visibleIds]);
+
   const onMouseDown = (e) => {
     // Space+drag OR middle mouse = pan
     if (spaceHeld || e.button===1) {
@@ -1029,6 +1042,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
             zoom={view.z}
             allNotes={allNotes}
             linksFor={linksFor}
+            visibleLinksFor={visibleLinksFor}
             onAddLink={(toId)=>addLink(n.id, toId)}
             onStartLink={()=>setLinkingFrom({id:n.id, x:n.x+n.w/2, y:n.y+n.h/2})}
             onJumpToNote={jumpToNote}
@@ -1145,7 +1159,7 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 /* ==================================================================== */
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
   onFocus, onChange, onDelete, onLinkClick, childFolders, onMoveToFolder, zoom=1,
-  allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote}) {
+  allNotes=[], linksFor, visibleLinksFor, onAddLink, onStartLink, onJumpToNote}) {
   const zRef = useRef(zoom); zRef.current = zoom;
   const [editing, setEditing] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1274,7 +1288,10 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           </svg>
         </button>
         {(() => {
-          const myLinks = linksFor ? linksFor(note.id) : [];
+          // Badge count reflects the links whose arrow is actually drawn on the
+          // current canvas. The context-menu submenu below still uses linksFor
+          // so cross-folder navigation keeps working.
+          const myLinks = visibleLinksFor ? visibleLinksFor(note.id) : (linksFor ? linksFor(note.id) : []);
           return (
             <button onClick={e=>{e.stopPropagation(); onStartLink && onStartLink();}}
               title={myLinks.length ? `${myLinks.length} link${myLinks.length>1?'s':''} · click to add another` : 'Link to another note'}
@@ -1537,7 +1554,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           borderRadius: isTerm?2:8,
           background: isActive ? withA(swatch,.16) : idleBg,
           border: `1px solid ${isActive ? withA(swatch,.5) : T.hairline}`,
-          borderTop: isDropTarget ? `2px solid ${T.accent}` : undefined,
+          ...(isDropTarget && { borderTop: `2px solid ${T.accent}` }),
           cursor: isAll ? 'pointer' : 'grab',
           transition:'background .1s, border-color .1s',
         }}

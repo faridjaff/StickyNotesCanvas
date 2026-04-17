@@ -110,6 +110,35 @@ function usePersistedState(key, initial) {
   return [s, setS];
 }
 
+/* ---------- Browser-side file helpers (used when window.stickyAPI is absent) ---------- */
+function downloadJSON(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+}
+
+function pickJSONFile() {
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      if (!file) { resolve(null); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { resolve(JSON.parse(reader.result)); }
+        catch { resolve(null); }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  });
+}
+
 /* ---------- Persisted store (Electron-aware) ---------- */
 function withDefaults(raw) {
   const src = raw || {};
@@ -201,7 +230,39 @@ function useStickyStore() {
     });
   }, [scheduleSave]);
 
-  return { store, setKey };
+  // Imperative export / import surface used by Preferences buttons.
+  // Same JSON shape as the Electron menu-bar flow, so files round-trip.
+  const exportNow = useCallback(() => {
+    const current = storeRef.current;
+    if (!current) return;
+    if (window.stickyAPI) {
+      window.stickyAPI.exportFile(current).catch(err => console.warn('[export]', err));
+    } else {
+      downloadJSON('sticky-notes-export.json', current);
+    }
+  }, []);
+
+  const importNow = useCallback(async () => {
+    try {
+      if (window.stickyAPI) {
+        const res = await window.stickyAPI.importFile();
+        if (res?.ok && res.data) {
+          const next = withDefaults(res.data);
+          setStore(next);
+          scheduleSave(next);
+        }
+      } else {
+        const data = await pickJSONFile();
+        if (data) {
+          const next = withDefaults(data);
+          setStore(next);
+          scheduleSave(next);
+        }
+      }
+    } catch (err) { console.warn('[import]', err); }
+  }, [scheduleSave]);
+
+  return { store, setKey, exportNow, importNow };
 }
 
 function Loading() {
@@ -280,12 +341,12 @@ function withA(hex, a) {
 /* APP                                                                  */
 /* ==================================================================== */
 function App() {
-  const { store, setKey } = useStickyStore();
+  const { store, setKey, exportNow, importNow } = useStickyStore();
   if (!store) return <Loading/>;
-  return <AppInner store={store} setKey={setKey} />;
+  return <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow} />;
 }
 
-function AppInner({ store, setKey }) {
+function AppInner({ store, setKey, exportNow, importNow }) {
   const tweaks   = store.tweaks;
   const folders  = store.folders;
   const notes    = store.notes;
@@ -545,7 +606,7 @@ function AppInner({ store, setKey }) {
         />
       )}
 
-      {(tweakActive || prefsOpen) && <TweakPanel T={T} tweaks={tweaks} update={updateTweak} onClose={()=>setPrefsOpen(false)}/>}
+      {(tweakActive || prefsOpen) && <TweakPanel T={T} tweaks={tweaks} update={updateTweak} onClose={()=>setPrefsOpen(false)} onExport={exportNow} onImport={importNow}/>}
 
       <StatusBar T={T} tweaks={tweaks}
         folderName={currentFolderName}
@@ -1724,7 +1785,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
 /* ==================================================================== */
 /* TWEAK PANEL                                                           */
 /* ==================================================================== */
-function TweakPanel({T, tweaks, update, onClose}) {
+function TweakPanel({T, tweaks, update, onClose, onExport, onImport}) {
   return (
     <div style={{
       position:'fixed', right:16, bottom:44, width:280, zIndex:90000,
@@ -1762,6 +1823,11 @@ function TweakPanel({T, tweaks, update, onClose}) {
       <div style={{display:'flex', alignItems:'center', gap:8}}>
         <input type="checkbox" checked={tweaks.tilt !== false} onChange={e=>update({tilt:e.target.checked})}/>
         <span style={{fontSize:12}}>Tilt notes at a slight angle</span>
+      </div>
+      <Label>Backup</Label>
+      <div style={{display:'flex', gap:8}}>
+        <button onClick={onExport} style={{flex:1, height:30, borderRadius:6, background:'transparent', border:`1px solid ${T.panelBorder}`, color:T.panelText, fontWeight:600, fontSize:12, cursor:'pointer'}}>Export…</button>
+        <button onClick={onImport} style={{flex:1, height:30, borderRadius:6, background:'transparent', border:`1px solid ${T.panelBorder}`, color:T.panelText, fontWeight:600, fontSize:12, cursor:'pointer'}}>Import…</button>
       </div>
     </div>
   );

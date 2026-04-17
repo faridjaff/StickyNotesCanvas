@@ -518,6 +518,7 @@ function AppInner({ store, setKey }) {
         setNotes={setNotes}
         jumpToNote={jumpToNote}
         moveNoteToFolder={moveNoteToFolder}
+        moveNotesToFolder={moveNotesToFolder}
         onCreateNote={createNote}
         view={store.view}
         setView={(v) => setKey('view', v)}
@@ -750,7 +751,7 @@ function KeyHint({T, keys, label}) {
 function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, linkLines,
   links, addLink, removeLink, linksFor,
   updateNote, bringToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
-  jumpToNote, moveNoteToFolder, onCreateNote,
+  jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote,
   view, setView, drawerOpen}) {
 
   const [deskMenu, setDeskMenu] = useState(null);
@@ -1064,6 +1065,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
             allNotes={allNotes}
             linksFor={linksFor}
             visibleLinksFor={visibleLinksFor}
+            onMoveNotesToFolder={moveNotesToFolder}
             onAddLink={(toId)=>addLink(n.id, toId)}
             onStartLink={()=>setLinkingFrom({id:n.id, x:n.x+n.w/2, y:n.y+n.h/2})}
             onJumpToNote={jumpToNote}
@@ -1179,7 +1181,7 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 /* STICKY NOTE                                                           */
 /* ==================================================================== */
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
-  onFocus, onChange, onDelete, onLinkClick, childFolders, onMoveToFolder, zoom=1,
+  onFocus, onChange, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
   allNotes=[], linksFor, visibleLinksFor, onAddLink, onStartLink, onJumpToNote}) {
   const zRef = useRef(zoom); zRef.current = zoom;
   const [editing, setEditing] = useState(false);
@@ -1543,6 +1545,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
     const isDropTarget = dragOverFolderId === f.id;
     return (
       <div key={f.id}
+        data-folder-id={f.id}
         draggable={!isAll && renamingFolder !== f.id}
         onDragStart={e => {
           if (isAll) return;

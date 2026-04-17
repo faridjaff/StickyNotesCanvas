@@ -1394,10 +1394,6 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         background: tweaks.theme==='terminal' ? 'rgba(0,0,0,.2)' : 'transparent',
         fontSize:10, color:ink, opacity:.75,
       }}>
-        {(note.tags||[]).slice(0,3).map(t => (
-          <span key={t} style={{padding:'1px 6px', background:'rgba(0,0,0,.08)', borderRadius: tweaks.theme==='terminal'?2:10,
-            fontFamily: tweaks.theme==='terminal' ? T.bodyFont : 'inherit'}}>#{t}</span>
-        ))}
         <div style={{flex:1}}/>
         <ColorDots current={note.color} onPick={c=>onChange({color:c})} ink={ink}/>
       </div>

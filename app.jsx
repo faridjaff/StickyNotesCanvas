@@ -120,6 +120,7 @@ function withDefaults(raw) {
     cwd:     src.cwd     ?? 'root',
     view:    src.view    ?? { x: 0, y: 0, z: 1 },
     drawer:  typeof src.drawer === 'boolean' ? src.drawer : true,
+    folderOrder: Array.isArray(src.folderOrder) ? src.folderOrder : [],
   };
 }
 
@@ -365,10 +366,14 @@ function AppInner({ store, setKey }) {
     setTimeout(()=>focusNote(id), 0);
   };
 
+  const folderOrder = store.folderOrder;
+  const setFolderOrder = (v) => setKey('folderOrder', v);
+
   const createFolder = () => {
     const id = uid('f');
     const hue = FOLDER_HUES[Object.keys(folders).length % FOLDER_HUES.length];
     setFolders(fs => ({...fs, [id]: { id, name:'New folder', parent: 'root', hue }}));
+    setFolderOrder(order => [...(order || []), id]);
     setCurrentFolder(id);
     setRenamingFolder(id);
   };
@@ -376,6 +381,7 @@ function AppInner({ store, setKey }) {
   const deleteFolder = (id) => {
     setFolders(fs => { const next = {...fs}; delete next[id]; return next; });
     setNotes(ns => ns.filter(n => n.folder !== id));
+    setFolderOrder(order => (order || []).filter(fid => fid !== id));
     if (currentFolder===id) setCurrentFolder('root');
     setConfirmDel(null);
   };
@@ -473,6 +479,8 @@ function AppInner({ store, setKey }) {
         onCreateNote={createNote}
         open={store.drawer}
         setOpen={(v) => setKey('drawer', v)}
+        folderOrder={folderOrder}
+        setFolderOrder={setFolderOrder}
       />
 
       <Desktop T={T} tweaks={tweaks}
@@ -1456,13 +1464,31 @@ function ConfirmDialog({T, title, body, onCancel, onConfirm}) {
 function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFolder,
   onCreateFolder, onRenameFolder, renamingFolder, setRenamingFolder, onDeleteFolder,
   onDropNoteOnFolder, onCreateNote,
-  open, setOpen}) {
+  open, setOpen,
+  folderOrder, setFolderOrder}) {
 
   const isTerm = tweaks.theme==='terminal';
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
 
-  const realFolders = useMemo(() =>
-    Object.values(folders).filter(f => f.id !== 'root').sort((a,b)=>a.name.localeCompare(b.name)),
-    [folders]);
+  // Ordered folders = user-defined order first (if saved), then any brand-new
+  // folders not yet in the order appended alphabetically. Stale IDs are dropped.
+  const realFolders = useMemo(() => {
+    const allIds = Object.values(folders).filter(f => f.id !== 'root').map(f => f.id);
+    const fromOrder = (folderOrder || []).filter(id => folders[id] && id !== 'root');
+    const missing = allIds.filter(id => !fromOrder.includes(id))
+      .sort((a,b) => folders[a].name.localeCompare(folders[b].name));
+    return [...fromOrder, ...missing].map(id => folders[id]);
+  }, [folders, folderOrder]);
+
+  const moveFolder = (draggedId, targetId) => {
+    if (draggedId === targetId) return;
+    const currentOrder = realFolders.map(f => f.id);
+    const without = currentOrder.filter(id => id !== draggedId);
+    const targetIdx = without.indexOf(targetId);
+    if (targetIdx < 0) return;
+    without.splice(targetIdx, 0, draggedId);
+    setFolderOrder(without);
+  };
 
   const renderRow = (f, isAll) => {
     const isActive = currentFolder===f.id;
@@ -1471,13 +1497,36 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
     const idleBg = tweaks.theme==='terminal'?'#0e1319':'rgba(0,0,0,.02)';
     const hoverBg = tweaks.theme==='terminal'?'#131a23':'rgba(0,0,0,.05)';
 
+    const isDropTarget = dragOverFolderId === f.id;
     return (
       <div key={f.id}
-        onDragOver={e=>{ if(!isAll){e.preventDefault(); e.currentTarget.style.outline=`1px dashed ${T.accent}`; e.currentTarget.style.background = withA(T.accent,.2);} }}
-        onDragLeave={e=>{ e.currentTarget.style.outline='none'; e.currentTarget.style.background = isActive ? withA(swatch,.16) : idleBg; }}
+        draggable={!isAll && renamingFolder !== f.id}
+        onDragStart={e => {
+          if (isAll) return;
+          e.dataTransfer.setData('folder-id', f.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragOver={e=>{
+          if (isAll) return;
+          // Accept either a note drop (move note into folder) or a folder drop (reorder)
+          const hasNote = e.dataTransfer.types.includes('note-id');
+          const hasFolder = e.dataTransfer.types.includes('folder-id');
+          if (!hasNote && !hasFolder) return;
+          e.preventDefault();
+          if (hasFolder) setDragOverFolderId(f.id);
+          else { e.currentTarget.style.outline=`1px dashed ${T.accent}`; e.currentTarget.style.background = withA(T.accent,.2); }
+        }}
+        onDragLeave={e=>{
+          e.currentTarget.style.outline='none';
+          e.currentTarget.style.background = isActive ? withA(swatch,.16) : idleBg;
+          if (dragOverFolderId === f.id) setDragOverFolderId(null);
+        }}
         onDrop={(e)=>{
           e.currentTarget.style.outline='none';
           e.currentTarget.style.background = isActive ? withA(swatch,.16) : idleBg;
+          setDragOverFolderId(null);
+          const folderId = e.dataTransfer.getData('folder-id');
+          if (folderId && !isAll) { moveFolder(folderId, f.id); return; }
           const nid = e.dataTransfer.getData('note-id');
           if (nid && !isAll) onDropNoteOnFolder(nid, f.id);
         }}
@@ -1488,7 +1537,8 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           borderRadius: isTerm?2:8,
           background: isActive ? withA(swatch,.16) : idleBg,
           border: `1px solid ${isActive ? withA(swatch,.5) : T.hairline}`,
-          cursor:'pointer',
+          borderTop: isDropTarget ? `2px solid ${T.accent}` : undefined,
+          cursor: isAll ? 'pointer' : 'grab',
           transition:'background .1s, border-color .1s',
         }}
         onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background = hoverBg; }}

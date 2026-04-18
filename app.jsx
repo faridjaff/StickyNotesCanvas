@@ -1786,6 +1786,9 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
 
   const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
+  // Remembers pointer-down coords on the pin button so we can suppress the
+  // click if the user actually dragged the note by its pin (drag-vs-click).
+  const pinDownRef = useRef(null);
 
   const onHeaderDown = (e) => {
     if (editingTitle || e.button!==0) return;
@@ -1903,7 +1906,22 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           cursor:'grab', userSelect:'none', flex:'none',
           fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
         }}>
-        <button onClick={e=>{e.stopPropagation(); onChange({pinned:!note.pinned});}}
+        <button
+          onPointerDown={e=>{ pinDownRef.current = {x:e.clientX, y:e.clientY}; }}
+          onClick={e=>{
+            e.stopPropagation();
+            // The header's pointerdown also starts a note drag, so a grab-
+            // and-drag by the pin would otherwise toggle pinned on release.
+            // Only toggle if the pointer barely moved between down and up.
+            const d = pinDownRef.current;
+            if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) >= 6) {
+              e.preventDefault();
+              pinDownRef.current = null;
+              return;
+            }
+            pinDownRef.current = null;
+            onChange({pinned:!note.pinned});
+          }}
           title={note.pinned ? 'Pinned (visible in every folder) · click to unpin' : 'Pin to keep visible in every folder'}
           style={{...btnS(ink), padding:2}}>
           {note.pinned ? (

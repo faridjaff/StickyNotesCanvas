@@ -1019,7 +1019,7 @@ function TopChrome({T, tweaks, currentFolderName, query, setQuery, onNewNote, on
         </svg>
       </div>
 
-      <div data-backup-menu style={{position:'relative'}}>
+      <div data-backup-menu style={{position:'relative', display: narrow?'none':undefined}}>
         <button onClick={()=>setBackupOpen(o=>!o)} title="Export or import notes" style={{
           height:30, padding:'0 12px', borderRadius: isTerm?2:8,
           background:'#000', color:'#fff', border:`1px solid ${T.panelBorder}`,
@@ -1203,8 +1203,10 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
   const [linkingFrom, setLinkingFrom] = useState(null); // note id when drawing a new link
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [panning, setPanning] = useState(false);
+  const [pinching, setPinching] = useState(false);
   const [marquee, setMarquee] = useState(null); // {startX, startY, curX, curY, shift} in world coords
   const panRef = useRef(null);
+  const pinchRef = useRef(null);
   const deskRef = useRef(null);
 
   // Narrow-viewport detection for touch-pan on the canvas. Matches the
@@ -1282,13 +1284,41 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
   // filter used by the mouse marquee branch so a touch that lands on a
   // sticky note is passed through untouched (the note's own drag logic
   // owns that gesture). Strictly additive to onMouseDown.
+  //
+  // Two-finger pinch is handled in a parallel branch below. Pan and pinch
+  // are mutually exclusive: pan only starts on exactly 1 finger, pinch only
+  // starts on exactly 2. When pinch is active, the pan-touchmove effect
+  // short-circuits (panning is false), and vice versa.
   const onTouchStart = (e) => {
     if (!narrow) return;
-    if (e.touches.length !== 1) return;
-    const t = e.touches[0];
     if (!(e.target.id==='desk' || e.target.id==='desk-inner' || e.target.id==='desk-grid')) return;
-    setPanning(true);
-    panRef.current = { sx: t.clientX, sy: t.clientY, vx: view.x, vy: view.y };
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      setPanning(true);
+      panRef.current = { sx: t.clientX, sy: t.clientY, vx: view.x, vy: view.y };
+      return;
+    }
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0], t1 = e.touches[1];
+      const dx = t1.clientX - t0.clientX;
+      const dy = t1.clientY - t0.clientY;
+      const d0 = Math.hypot(dx, dy);
+      if (d0 === 0) return;
+      const rect = deskRef.current.getBoundingClientRect();
+      // midpoint in screen (desk-relative) coords at pinch start
+      const mx0 = ((t0.clientX + t1.clientX) / 2) - rect.left;
+      const my0 = ((t0.clientY + t1.clientY) / 2) - rect.top;
+      pinchRef.current = { d0, z0: view.z, vx0: view.x, vy0: view.y, mx0, my0 };
+      setPinching(true);
+      // If a 1-finger pan was in progress (user dropped a second finger
+      // mid-drag), cancel it so the pan touchmove handler doesn't fight
+      // the pinch handler. The user can start a fresh pan after lifting
+      // both fingers.
+      if (panning) {
+        setPanning(false);
+        panRef.current = null;
+      }
+    }
   };
 
   useEffect(() => {
@@ -1328,6 +1358,55 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
       window.removeEventListener('touchcancel', end);
     };
   }, [panning]);
+
+  // Mobile-only: two-finger pinch-to-zoom on the canvas. Mirrors the pan
+  // effect's structure (window-scoped {passive:false} listeners for the
+  // duration of the gesture) but operates on pinchRef instead of panRef.
+  // Zoom is anchored at the pinch midpoint so the world point beneath the
+  // midpoint stays put, matching the wheel-zoom feel. When the finger count
+  // drops below 2 the gesture ends; we do not transition into a pan — a
+  // fresh touchstart is required for that.
+  useEffect(() => {
+    if (!pinching) return;
+    const move = (e) => {
+      const p = pinchRef.current; if (!p) return;
+      if (!e.touches || e.touches.length < 2) return;
+      e.preventDefault();
+      const t0 = e.touches[0], t1 = e.touches[1];
+      const dx = t1.clientX - t0.clientX;
+      const dy = t1.clientY - t0.clientY;
+      const d = Math.hypot(dx, dy);
+      if (d === 0) return;
+      // Same clamp range as onWheel (0.25 .. 3).
+      const nz = Math.max(0.25, Math.min(3, p.z0 * (d / p.d0)));
+      const ratio = nz / p.z0;
+      // Midpoint-preserving pan: algebraically identical to the wheel-zoom
+      // formula x' = mx - (mx - v.x) * ratio, but anchored at the pinch-start
+      // midpoint (mx0, my0) and applied against the pinch-start view offset
+      // (vx0, vy0) so the midpoint's world coordinate stays fixed under the
+      // midpoint's screen coordinate for the whole gesture.
+      setView(() => ({
+        x: p.mx0 - (p.mx0 - p.vx0) * ratio,
+        y: p.my0 - (p.my0 - p.vy0) * ratio,
+        z: nz,
+      }));
+    };
+    const end = (e) => {
+      // End as soon as fewer than 2 fingers remain. Do NOT promote the
+      // remaining finger into a pan — a new touchstart is required.
+      if (e.touches && e.touches.length >= 2) return;
+      setPinching(false);
+      pinchRef.current = null;
+    };
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+    window.addEventListener('touchcancel', end);
+    return () => {
+      window.removeEventListener('touchmove', move, { passive: false });
+      window.removeEventListener('touchend', end);
+      window.removeEventListener('touchcancel', end);
+    };
+  }, [pinching]);
 
   // Marquee drag: while active, track pointer in world coords; on release, resolve selection.
   useEffect(() => {
@@ -2147,11 +2226,9 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
         style={{
           position:'relative', display:'flex', gap:10, padding:'11px 12px', marginBottom:6,
           borderRadius: isTerm?2:8,
-          background: isActive ? withA(swatch,.16) : idleBg,
-          border: `1px solid ${isActive ? withA(swatch,.5) : T.hairline}`,
-          ...(isDropTarget && { borderTop: `2px solid ${T.accent}` }),
+          background: isDropTarget ? withA(T.accent, .22) : (isActive ? withA(swatch,.16) : idleBg),
           cursor: isAll ? 'pointer' : 'grab',
-          transition:'background .1s, border-color .1s',
+          transition:'background .1s',
         }}
         onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background = hoverBg; }}
         onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.background = idleBg; }}

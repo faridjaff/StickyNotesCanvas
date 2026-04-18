@@ -339,12 +339,21 @@ function withA(hex, a) {
 
 const STICKY_CLIPBOARD_MARKER = '<!-- sticky-notes/v1 -->';
 
-function notesToClipboardText(notes) {
+function notesToClipboardText(notes, links) {
   const human = notes.map(n => (n.title || 'Untitled') + (n.body ? '\n\n' + n.body : '')).join('\n\n---\n\n');
-  const payload = notes.map(n => ({
-    title: n.title, body: n.body, color: n.color,
-    w: n.w, h: n.h, tags: n.tags, pinned: !!n.pinned,
-  }));
+  // Only carry links where BOTH endpoints are inside the copied set.
+  // Otherwise pasting elsewhere would leave a dangling reference and the
+  // link badge would lie about a connection that doesn't exist anymore.
+  const ids = new Set(notes.map(n => n.id));
+  const subLinks = (links || []).filter(l => ids.has(l.from) && ids.has(l.to));
+  const payload = {
+    notes: notes.map(n => ({
+      id: n.id,  // preserved only for in-payload link endpoint mapping; remapped on paste
+      title: n.title, body: n.body, color: n.color,
+      w: n.w, h: n.h, tags: n.tags, pinned: !!n.pinned,
+    })),
+    links: subLinks.map(l => ({ from: l.from, to: l.to })),
+  };
   return human + '\n\n' + STICKY_CLIPBOARD_MARKER + '\n' + JSON.stringify(payload);
 }
 
@@ -353,8 +362,14 @@ function clipboardTextToNotes(text) {
   if (i === -1) return null;
   const json = text.slice(i + STICKY_CLIPBOARD_MARKER.length).trim();
   try {
-    const arr = JSON.parse(json);
-    return Array.isArray(arr) ? arr : null;
+    const parsed = JSON.parse(json);
+    // Bare-array form is the legacy v1 payload; wrap so callers can treat both
+    // shapes the same. New form is { notes: [...], links: [...] }.
+    if (Array.isArray(parsed)) return { notes: parsed, links: [] };
+    if (parsed && Array.isArray(parsed.notes)) {
+      return { notes: parsed.notes, links: Array.isArray(parsed.links) ? parsed.links : [] };
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -528,7 +543,7 @@ function AppInner({ store, setKey, exportNow, importNow }) {
     // top-to-bottom roughly as the user sees the cluster.
     const ordered = notes.filter(n => idSet.has(n.id));
     try {
-      await navigator.clipboard.writeText(notesToClipboardText(ordered));
+      await navigator.clipboard.writeText(notesToClipboardText(ordered, links));
     } catch (e) {
       // Clipboard write can fail without user gesture / permissions; silent no-op.
     }
@@ -539,10 +554,10 @@ function AppInner({ store, setKey, exportNow, importNow }) {
     try { text = await navigator.clipboard.readText(); } catch { return; }
     if (!text) return;
     const payload = clipboardTextToNotes(text);
-    if (!payload || !payload.length) return;
+    if (!payload || !payload.notes.length) return;
 
     // Random anchor near the visible canvas top-left (same strategy as
-     // moveNotesToFolder). The serialised payload doesn't carry x/y, so we
+    // moveNotesToFolder). The serialised payload doesn't carry x/y, so we
     // just offset each pasted note by a small per-index step to avoid a
     // perfect overlapping stack.
     const baseX = 80 + Math.random() * 100;
@@ -553,10 +568,14 @@ function AppInner({ store, setKey, exportNow, importNow }) {
       ? (Object.keys(folders).find(k => k!=='root') || 'root')
       : currentFolder;
 
+    // Map original-ids → freshly-minted ids so any links carried in the
+    // payload can be re-attached to the new notes.
+    const idMap = new Map();
     const newIds = [];
-    const fresh = payload.map((p, idx) => {
+    const fresh = payload.notes.map((p, idx) => {
       const id = uid('n');
       newIds.push(id);
+      if (p.id) idMap.set(p.id, id);
       zRef.current += 1;
       return {
         id,
@@ -574,6 +593,17 @@ function AppInner({ store, setKey, exportNow, importNow }) {
       };
     });
     setNotes(ns => [...ns, ...fresh]);
+
+    // Recreate any links whose BOTH endpoints landed in this paste. Drop
+    // anything else — a half-mapped link would point at an id that doesn't
+    // exist in this app's state.
+    const freshLinks = (payload.links || [])
+      .filter(l => idMap.has(l.from) && idMap.has(l.to))
+      .map(l => ({ id: uid('l'), from: idMap.get(l.from), to: idMap.get(l.to) }));
+    if (freshLinks.length) {
+      setLinks(ls => [...ls, ...freshLinks]);
+    }
+
     setSelectedIds(new Set(newIds));
   };
 

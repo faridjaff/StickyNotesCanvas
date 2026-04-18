@@ -2692,8 +2692,7 @@ function StatusBar({T, tweaks, folderName, noteCount, folderCount}) {
       <span style={{opacity:.4}}>·</span>
       <span>auto-saved</span>
       <span style={{opacity:.4}}>·</span>
-      <span style={{color:T.accent}}>●</span>
-      <span>synced</span>
+      <span>local only</span>
     </div>
   );
 }

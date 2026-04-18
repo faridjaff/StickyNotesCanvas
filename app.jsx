@@ -2130,9 +2130,22 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
   folderOrder, setFolderOrder}) {
 
   const isTerm = tweaks.theme==='terminal';
+  const isPaper = tweaks.theme==='paper';
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
   // Right-click context menu on a folder row. Shape: {x, y, folderId} | null.
   const [folderMenu, setFolderMenu] = useState(null);
+
+  // Washi-tape colors for paper variant (slightly lighter/warmer than folder hues)
+  const WASHI = {
+    '#d97757': '#e9a27a',
+    '#5a82c9': '#8cb3d8',
+    '#8a6fbf': '#b89ed6',
+    '#4c9e6b': '#9dc98a',
+    '#c4843a': '#e0c477',
+    '#b84a6b': '#d89aaa',
+    '#3fa89a': '#8ccec4',
+    '#8a8f3d': '#c7cc82',
+  };
 
   // Close the folder context menu on Escape (outside-click is handled by
   // the shared ContextMenu component itself).
@@ -2172,10 +2185,121 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
     const isActive = currentFolder===f.id;
     const count = isAll ? notes.length : notes.filter(n=>n.folder===f.id).length;
     const swatch = isAll ? T.accent : f.hue;
-    const idleBg = tweaks.theme==='terminal'?'#0e1319':'rgba(0,0,0,.02)';
-    const hoverBg = tweaks.theme==='terminal'?'#131a23':'rgba(0,0,0,.05)';
+    const idleBg = isTerm ? '#0e1319' : 'rgba(0,0,0,.02)';
+    const hoverBg = isTerm ? '#131a23' : 'rgba(0,0,0,.05)';
 
     const isDropTarget = dragOverFolderId === f.id;
+
+    // Context-menu handler shared across variants (skips the All-notes root row).
+    const onRowContextMenu = (e) => {
+      if (isAll) return;
+      e.preventDefault();
+      e.stopPropagation();
+      let host = e.currentTarget.parentElement;
+      while (host && getComputedStyle(host).position === 'static') host = host.parentElement;
+      const rect = host ? host.getBoundingClientRect() : {left:0, top:0};
+      setFolderMenu({x: e.clientX - rect.left, y: e.clientY - rect.top, folderId: f.id});
+    };
+
+    // ─── Paper variant: washi-tape row, no chip icon (real folders only) ───
+    if (isPaper && !isAll) {
+      const washiColor = WASHI[f.hue] || f.hue;
+      const paperIdleBg = 'transparent';
+      const paperActiveBg = withA(swatch, .14);
+      const paperHoverBg = 'rgba(120,80,40,.06)';
+      return (
+        <div key={f.id}
+          data-folder-id={f.id}
+          draggable={renamingFolder !== f.id}
+          onDragStart={e => {
+            e.dataTransfer.setData('folder-id', f.id);
+            e.dataTransfer.effectAllowed = 'move';
+          }}
+          onDragOver={e => {
+            const hasNotes = e.dataTransfer.types.includes('note-ids');
+            const hasFolder = e.dataTransfer.types.includes('folder-id');
+            if (!hasNotes && !hasFolder) return;
+            e.preventDefault();
+            if (hasFolder) {
+              setDragOverFolderId(f.id);
+            } else {
+              e.currentTarget.style.outline = `1px dashed ${T.accent}`;
+              e.currentTarget.style.background = withA(T.accent, .12);
+            }
+          }}
+          onDragLeave={e => {
+            e.currentTarget.style.outline = 'none';
+            e.currentTarget.style.background = isActive ? paperActiveBg : paperIdleBg;
+            if (dragOverFolderId === f.id) setDragOverFolderId(null);
+          }}
+          onDrop={e => {
+            e.currentTarget.style.outline = 'none';
+            e.currentTarget.style.background = isActive ? paperActiveBg : paperIdleBg;
+            setDragOverFolderId(null);
+            const folderId = e.dataTransfer.getData('folder-id');
+            if (folderId) { moveFolder(folderId, f.id); return; }
+            const raw = e.dataTransfer.getData('note-ids');
+            if (raw) {
+              const ids = raw.split(',').filter(Boolean);
+              if (ids.length > 1 && onDropNotesOnFolder) onDropNotesOnFolder(ids, f.id);
+              else if (ids.length === 1) onDropNoteOnFolder(ids[0], f.id);
+            }
+          }}
+          onClick={() => setCurrentFolder(f.id)}
+          onDoubleClick={() => setRenamingFolder(f.id)}
+          onContextMenu={onRowContextMenu}
+          style={{
+            position:'relative', display:'flex', alignItems:'center', gap:10,
+            padding:'9px 12px 9px 18px', marginBottom:3,
+            cursor: renamingFolder === f.id ? 'text' : 'grab',
+            background: isDropTarget ? withA(T.accent, .18)
+                      : isActive ? paperActiveBg : paperIdleBg,
+            borderRadius:3,
+            transition:'background .1s',
+          }}
+          onMouseEnter={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = paperHoverBg; }}
+          onMouseLeave={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = paperIdleBg; }}
+        >
+          {/* Washi tape stripe */}
+          <div style={{
+            position:'absolute', left:4, top:7, bottom:7, width:6,
+            background: washiColor,
+            backgroundImage:
+              'repeating-linear-gradient(135deg, transparent 0 3px, rgba(255,255,255,.22) 3px 4px)',
+            boxShadow: `inset 0 0 0 0.5px ${washiColor}, 0 1px 2px rgba(0,0,0,.1)`,
+            opacity: .85,
+          }}/>
+          <div style={{flex:1, minWidth:0, paddingLeft:8}}>
+            {renamingFolder===f.id ? (
+              <input autoFocus defaultValue={f.name}
+                onClick={e=>e.stopPropagation()}
+                onBlur={e=>{ onRenameFolder(f.id, e.target.value||f.name); setRenamingFolder(null); }}
+                onKeyDown={e=>{ if(e.key==='Enter'){onRenameFolder(f.id, e.target.value||f.name); setRenamingFolder(null);} if(e.key==='Escape'){setRenamingFolder(null);}}}
+                style={{width:'100%', background:'transparent', border:'none', outline:'none',
+                  color:T.panelText, fontSize:14, fontWeight:600, font:'inherit'}}
+              />
+            ) : (
+              <div style={{fontSize:13, fontWeight:600, color:T.panelText,
+                overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                {f.name}
+              </div>
+            )}
+            <div style={{fontSize:11, color:T.muted, marginTop:2, fontStyle:'italic'}}>
+              {count} {count===1?'note':'notes'}
+            </div>
+          </div>
+          {isActive && (
+            <button onClick={(e)=>{e.stopPropagation(); onDeleteFolder(f.id);}} title="Delete folder"
+              style={{width:20, height:20, display:'grid', placeItems:'center',
+                background:'transparent', border:'none', cursor:'pointer', color:T.muted,
+                borderRadius:4, fontSize:14, lineHeight:1, padding:0,
+              }}>×</button>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Flat / terminal row, and the "All notes" row in ALL variants ───
     return (
       <div key={f.id}
         data-folder-id={f.id}
@@ -2187,13 +2311,16 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
         }}
         onDragOver={e=>{
           if (isAll) return;
-          // Accept either a note drop (move note(s) into folder) or a folder drop (reorder)
           const hasNotes = e.dataTransfer.types.includes('note-ids');
           const hasFolder = e.dataTransfer.types.includes('folder-id');
           if (!hasNotes && !hasFolder) return;
           e.preventDefault();
-          if (hasFolder) setDragOverFolderId(f.id);
-          else { e.currentTarget.style.outline=`1px dashed ${T.accent}`; e.currentTarget.style.background = withA(T.accent,.2); }
+          if (hasFolder) {
+            setDragOverFolderId(f.id);
+          } else {
+            e.currentTarget.style.outline = `1px dashed ${T.accent}`;
+            e.currentTarget.style.background = withA(T.accent, .2);
+          }
         }}
         onDragLeave={e=>{
           e.currentTarget.style.outline='none';
@@ -2215,19 +2342,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
         }}
         onClick={()=>setCurrentFolder(f.id)}
         onDoubleClick={()=>!isAll && setRenamingFolder(f.id)}
-        onContextMenu={e=>{
-          // Skip the All notes root row — it's not a real folder.
-          if (isAll) return;
-          e.preventDefault();
-          e.stopPropagation();
-          // ContextMenu uses position:absolute relative to its nearest
-          // positioned ancestor (the drawer wrapper). Translate viewport
-          // coords to coords inside that wrapper. Walk up to find it.
-          let host = e.currentTarget.parentElement;
-          while (host && getComputedStyle(host).position === 'static') host = host.parentElement;
-          const rect = host ? host.getBoundingClientRect() : {left:0, top:0};
-          setFolderMenu({x: e.clientX - rect.left, y: e.clientY - rect.top, folderId: f.id});
-        }}
+        onContextMenu={onRowContextMenu}
         style={{
           position:'relative', display:'flex', gap:10, padding:'11px 12px', marginBottom:6,
           borderRadius: isTerm?2:8,
@@ -2235,8 +2350,8 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           cursor: isAll ? 'pointer' : 'grab',
           transition:'background .1s',
         }}
-        onMouseEnter={e=>{ if(!isActive) e.currentTarget.style.background = hoverBg; }}
-        onMouseLeave={e=>{ if(!isActive) e.currentTarget.style.background = idleBg; }}
+        onMouseEnter={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = hoverBg; }}
+        onMouseLeave={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = idleBg; }}
       >
         <div style={{width:4, borderRadius:2, background:swatch, flex:'none'}}/>
         <div style={{flex:1, minWidth:0, display:'flex', alignItems:'center', gap:10}}>
@@ -2281,7 +2396,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           position:'absolute', right:0, top:72, zIndex:19000,
           width:32, height:96, background:T.panelBg, color:T.panelText,
           border:`1px solid ${T.panelBorder}`, borderRight:'none',
-          borderRadius:'10px 0 0 10px', cursor:'pointer',
+          borderRadius: isTerm ? 2 : '10px 0 0 10px', cursor:'pointer',
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:11, fontWeight:700, letterSpacing:1.5, boxShadow:'0 4px 14px rgba(0,0,0,.08)',
         }}>
@@ -2292,33 +2407,72 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
       {open && (
         <div style={{
           position:'absolute', right:0, top:62, bottom:36, width:300,
-          background:T.panelBg, border:`1px solid ${T.panelBorder}`,
-          borderRadius: isTerm?2:10, margin:'0 10px 0 0',
+          background: isPaper ? '#f6ecd8' : T.panelBg,
+          border:`1px solid ${isPaper ? 'rgba(120,80,40,.18)' : T.panelBorder}`,
+          borderRadius: isTerm ? 2 : (isPaper ? 4 : 10),
+          margin:'0 10px 0 0',
           display:'flex', flexDirection:'column', overflow:'hidden', zIndex:18000,
-          boxShadow:'0 10px 30px rgba(0,0,0,.12)',
+          boxShadow: isPaper
+            ? 'inset 0 0 0 1px rgba(120,80,40,.12), 0 2px 0 rgba(60,40,20,.05), 0 10px 28px rgba(60,40,20,.16)'
+            : '0 10px 30px rgba(0,0,0,.12)',
           fontFamily: tweaks.font+', system-ui, sans-serif',
+          // SVG-noise paper grain for the paper variant
+          backgroundImage: isPaper
+            ? "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.03 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")"
+            : undefined,
         }}>
-          <div style={{padding:'10px 12px', display:'flex', alignItems:'center', gap:8,
-            borderBottom:`1px solid ${T.hairline}`}}>
-            <div style={{fontSize:14, fontWeight:700, color:T.panelText, flex:1, letterSpacing:isTerm?0.5:0}}>
-              {isTerm ? '// folders' : 'Folders'}
-            </div>
-            <button onClick={onCreateFolder} title="New folder" style={{
-              height:26, padding:'0 10px', borderRadius: isTerm?2:6,
-              background:'transparent', color:T.panelText, border:`1px solid ${T.panelBorder}`,
-              fontWeight:600, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:5,
+          {/* Header */}
+          {isPaper ? (
+            <div style={{
+              fontFamily: T.bodyFont, fontSize:18, fontWeight:700,
+              color:'#6a5a44', padding:'14px 16px 4px',
+              display:'flex', alignItems:'baseline', gap:8,
             }}>
-              <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span> folder
-            </button>
-            <button onClick={()=>setOpen(false)} title="Hide" style={{
-              width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
-              color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
-            }}>›</button>
-          </div>
+              <span>folders</span>
+              <span style={{
+                fontSize:11, color:T.muted,
+                fontFamily: (tweaks.font || 'Inter') + ', system-ui, sans-serif',
+                fontWeight:500,
+              }}>
+                — {realFolders.length}
+              </span>
+              <div style={{flex:1}}/>
+              <button onClick={onCreateFolder} title="New folder" style={{
+                background:'transparent', border:'none', color:T.muted, fontSize:20,
+                cursor:'pointer', padding:'0 4px', lineHeight:1,
+                fontFamily: T.bodyFont, fontWeight:700,
+              }}>+</button>
+              <button onClick={()=>setOpen(false)} title="Hide" style={{
+                width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
+                color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
+              }}>›</button>
+            </div>
+          ) : (
+            <div style={{padding:'10px 12px', display:'flex', alignItems:'center', gap:8,
+              borderBottom:`1px solid ${T.hairline}`}}>
+              <div style={{fontSize:14, fontWeight:700, color:T.panelText, flex:1, letterSpacing:isTerm?0.5:0}}>
+                {isTerm ? '// folders' : 'Folders'}
+              </div>
+              <button onClick={onCreateFolder} title="New folder" style={{
+                height:26, padding:'0 10px', borderRadius: isTerm?2:6,
+                background:'transparent', color:T.panelText, border:`1px solid ${T.panelBorder}`,
+                fontWeight:600, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:5,
+              }}>
+                <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span> folder
+              </button>
+              <button onClick={()=>setOpen(false)} title="Hide" style={{
+                width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
+                color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
+              }}>›</button>
+            </div>
+          )}
 
-          <div style={{flex:1, overflow:'auto', padding:'8px'}}>
+          <div style={{
+            flex:1, overflow:'auto',
+            padding: isPaper ? '2px 10px 10px' : '8px',
+          }}>
             {renderRow({id:'root', name:'All notes'}, true)}
-            {realFolders.length>0 && (
+            {!isPaper && realFolders.length>0 && (
               <div style={{fontSize:10, textTransform:'uppercase', letterSpacing:1.5, opacity:.5,
                 padding:'12px 12px 6px', color:T.panelText}}>
                 Your folders
@@ -2330,16 +2484,17 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
                 button in the header still works. */}
             <button onClick={()=>onCreateFolder()} title="Create folder" style={{
               width:'100%', height:30, marginTop: realFolders.length>0 ? 4 : 12,
-              padding:'0 10px', borderRadius: isTerm?2:6,
+              padding:'0 10px', borderRadius: isTerm ? 2 : (isPaper ? 3 : 6),
               background:'transparent', color:T.muted,
-              border:`1px dashed ${T.panelBorder}`,
+              border: `1px dashed ${isPaper ? 'rgba(120,80,40,.28)' : T.panelBorder}`,
               fontSize:12, fontWeight:600, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center', gap:6,
               transition:'background .12s, color .12s, transform .12s',
               fontFamily: isTerm?T.bodyFont:'inherit',
             }}
               onMouseEnter={e=>{
-                e.currentTarget.style.background = isTerm?'#131a23':'rgba(0,0,0,.04)';
+                e.currentTarget.style.background = isTerm ? '#131a23'
+                  : (isPaper ? 'rgba(120,80,40,.06)' : 'rgba(0,0,0,.04)');
                 e.currentTarget.style.color = T.panelText;
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }}
@@ -2363,19 +2518,41 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             />
           )}
 
+          {/* Footer: + new sticky */}
           <div style={{
-            padding:'8px 12px', borderTop:`1px solid ${T.hairline}`, background: tweaks.theme==='terminal'?'#0a0c10':'rgba(0,0,0,.02)',
+            padding: isPaper ? '10px 14px 14px' : '8px 12px',
+            borderTop: isPaper ? '1px dashed rgba(120,80,40,.28)' : `1px solid ${T.hairline}`,
+            background: isTerm ? '#0a0c10' : (isPaper ? 'transparent' : 'rgba(0,0,0,.02)'),
             fontSize:11, color:T.muted, display:'flex', alignItems:'center', gap:8,
           }}>
-            <button onClick={onCreateNote} style={{
-              flex:1, height:28, padding:'0 10px', borderRadius: isTerm?2:6,
-              background:T.accent, color: isTerm?'#0a0c10':'#fff', border:'none',
-              fontWeight:700, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-            }}>
-              <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span>
-              new sticky
-              <kbd style={{fontFamily:'ui-monospace, monospace', fontSize:9, background:'rgba(0,0,0,.18)', padding:'1px 4px', borderRadius:3, marginLeft:2}}>N</kbd>
-            </button>
+            {isPaper ? (
+              <button onClick={onCreateNote} style={{
+                flex:1, background:'#fdf4c5', color:'#4a3a12',
+                border:'1px solid rgba(120,80,40,.28)', borderRadius:3,
+                padding:'9px 12px', cursor:'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+                fontFamily: T.bodyFont, fontSize:19, fontWeight:700,
+                whiteSpace:'nowrap', lineHeight:1.1,
+                boxShadow:'0 1px 0 #fff inset, 0 2px 0 rgba(60,40,20,.06), 0 6px 14px rgba(60,40,20,.08)',
+              }}>
+                <span>+ new sticky</span>
+                <kbd style={{
+                  fontFamily:'ui-monospace, monospace', fontSize:10, fontWeight:600,
+                  background:'rgba(60,40,20,.18)', color:'#4a3a12',
+                  padding:'2px 6px', borderRadius:2,
+                }}>N</kbd>
+              </button>
+            ) : (
+              <button onClick={onCreateNote} style={{
+                flex:1, height:28, padding:'0 10px', borderRadius: isTerm?2:6,
+                background:T.accent, color: isTerm?'#0a0c10':'#fff', border:'none',
+                fontWeight:700, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+              }}>
+                <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span>
+                new sticky
+                <kbd style={{fontFamily:'ui-monospace, monospace', fontSize:9, background:'rgba(0,0,0,.18)', padding:'1px 4px', borderRadius:3, marginLeft:2}}>N</kbd>
+              </button>
+            )}
           </div>
         </div>
       )}

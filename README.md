@@ -81,23 +81,6 @@ The JSON format is identical across all three — export from one, import into a
 
 ---
 
-## Keyboard shortcuts
-
-| | |
-|---|---|
-| `Ctrl/Cmd+,` | Open Preferences (themes, font, density, tilt) |
-| `Ctrl/Cmd+Shift+E` | Export notes (Electron only) |
-| `Ctrl/Cmd+O` | Import notes (Electron only) |
-| `Ctrl/Cmd+F` | Focus search box |
-| `N` | Create a new note |
-| `Delete` / `Backspace` | Delete the selected note(s) |
-| `Esc` | Clear selection |
-| `Space + drag` | Pan the canvas |
-| Wheel / scroll | Zoom canvas (no modifier needed) |
-| `Ctrl/Cmd + click` | Toggle a note in/out of multi-selection |
-
----
-
 ## License
 
 [MIT](LICENSE) — © 2026 faridjaff.

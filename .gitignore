@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.tmp
 .DS_Store
+
+# AI-process internal artifacts — specs, plans, ideas — don't belong in the public repo
+docs/superpowers/

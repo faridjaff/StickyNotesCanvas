@@ -35,6 +35,12 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install snapcraft (Linux only)
+        # electron-builder's snap target needs the snapcraft CLI to package
+        # the .snap. snapd is preinstalled on ubuntu-latest runners.
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo snap install snapcraft --classic
+
       - name: Build (electron-builder picks the host platform)
         # --publish never tells electron-builder to JUST build, not try to publish to
         # GitHub itself. The upload step below (action-gh-release) does the publishing,
@@ -45,13 +51,33 @@ jobs:
           # Users get a Gatekeeper warning on first launch; right-click → Open bypasses it.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Locate snap file (Linux only)
+        # snapcore/action-publish wants a single path, no globs. Find it once
+        # so subsequent step references it via the output.
+        if: matrix.os == 'ubuntu-latest'
+        id: snap
+        run: echo "path=$(ls dist/*.snap | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish snap to Snap Store (Linux only)
+        # SNAPCRAFT_STORE_CREDENTIALS is set in repo settings → Secrets and
+        # was generated locally via:
+        #   snapcraft export-login --snaps=sticky-notes-canvas --channels=stable -
+        if: matrix.os == 'ubuntu-latest'
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snap.outputs.path }}
+          release: stable
+
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.deb
             dist/*.AppImage
+            dist/*.snap
             dist/*.dmg
             dist/*.zip
-          fail_on_unmatched_files: false   # Linux job won't have .dmg, Mac job won't have .deb — that's fine
+          fail_on_unmatched_files: false   # Linux job won't have .dmg, Mac job won't have .deb/.snap — that's fine
           generate_release_notes: true

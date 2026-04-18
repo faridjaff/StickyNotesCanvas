@@ -43,6 +43,34 @@ const userDataDir = () => app.getPath('userData');
 const notesPath   = () => path.join(userDataDir(), 'notes.json');
 const windowPath  = () => path.join(userDataDir(), 'window.json');
 
+// One-time migration: until v1.2.3 the package was named "sticky-notes" and
+// userData lived at ~/.config/sticky-notes/. v1.3.0 renamed the package to
+// "sticky-notes-canvas" (so the snap name could match what's available on
+// the Snap Store) which moved userData to ~/.config/sticky-notes-canvas/.
+// On first launch of the new build, if there's no notes.json in the new
+// path but the old one exists, copy notes.json + window.json over so
+// existing deb users don't lose their data on upgrade. Snap installs are
+// sandboxed and won't see the old path either way (no migration needed).
+function migrateLegacyUserData() {
+  try {
+    const newDir = userDataDir();
+    const newNotes = path.join(newDir, 'notes.json');
+    if (fs.existsSync(newNotes)) return;  // new path already populated, nothing to do
+    const legacyDir = path.join(path.dirname(newDir), 'sticky-notes');
+    const legacyNotes = path.join(legacyDir, 'notes.json');
+    if (!fs.existsSync(legacyNotes)) return;  // no legacy data either, fresh install
+    fs.mkdirSync(newDir, { recursive: true });
+    fs.copyFileSync(legacyNotes, newNotes);
+    const legacyWin = path.join(legacyDir, 'window.json');
+    if (fs.existsSync(legacyWin)) {
+      fs.copyFileSync(legacyWin, path.join(newDir, 'window.json'));
+    }
+    console.log(`[main] migrated userData from ${legacyDir} → ${newDir}`);
+  } catch (err) {
+    console.warn('[main] userData migration failed:', err.message);
+  }
+}
+
 let mainWindow = null;
 let pendingSave = null;
 let isQuitting  = false;
@@ -205,6 +233,9 @@ ipcMain.handle('notes:import', async () => {
 });
 
 app.whenReady().then(() => {
+  // Run any one-time migrations before anything reads notes.json.
+  migrateLegacyUserData();
+
   // On macOS in dev mode (`npm start`), Electron shows its default icon in the
   // dock because there's no .app bundle with an Info.plist. Packaged .dmg builds
   // get the correct icon automatically from electron-builder. This closes the

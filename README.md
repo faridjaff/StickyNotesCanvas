@@ -80,11 +80,18 @@ A short list, because the whole point of this project is that somebody should ha
 
 ### Pre-built downloads (recommended)
 
-Grab the latest from [**Releases**](https://github.com/faridjaff/sticky-notes/releases/latest) and pick the file for your platform:
+Easiest path on Ubuntu — install from the Snap Store, auto-updates included:
+
+```bash
+sudo snap install sticky-notes-canvas
+```
+
+Or grab the latest from [**Releases**](https://github.com/faridjaff/sticky-notes/releases/latest) and pick the file for your platform:
 
 | Platform | File | How to install |
 |---|---|---|
-| **Ubuntu / Debian** | `sticky-notes_<ver>_amd64.deb` | `sudo dpkg -i sticky-notes_<ver>_amd64.deb` |
+| **Ubuntu / any distro with snapd** | (Snap Store) | `sudo snap install sticky-notes-canvas` |
+| **Ubuntu / Debian** | `sticky-notes-canvas_<ver>_amd64.deb` | `sudo dpkg -i sticky-notes-canvas_<ver>_amd64.deb` |
 | **Linux (portable)** | `Sticky Notes-<ver>.AppImage` | `chmod +x` and double-click — no install needed |
 | **macOS — Apple Silicon (M-series)** | `Sticky Notes-<ver>-arm64.dmg` | mount → drag to `/Applications` |
 | **macOS — Intel** | `Sticky Notes-<ver>.dmg` | mount → drag to `/Applications` |

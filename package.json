@@ -1,5 +1,5 @@
 {
-  "name": "sticky-notes",
+  "name": "sticky-notes-canvas",
   "version": "1.2.3",
   "description": "Spatial sticky-notes canvas",
   "main": "main.js",
@@ -42,7 +42,8 @@
     "linux": {
       "target": [
         "deb",
-        "AppImage"
+        "AppImage",
+        "snap"
       ],
       "category": "Utility",
       "icon": "build/icons",
@@ -51,6 +52,12 @@
       "desktop": {
         "StartupWMClass": "sticky-notes"
       }
+    },
+    "snap": {
+      "grade": "stable",
+      "confinement": "strict",
+      "summary": "Spatial sticky-notes canvas for Linux",
+      "category": "productivity"
     },
     "mac": {
       "target": [

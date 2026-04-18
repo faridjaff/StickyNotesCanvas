@@ -2442,24 +2442,21 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           {/* Header */}
           {isPaper ? (
             <div style={{
-              fontFamily: T.bodyFont, fontSize:18, fontWeight:700,
-              color:'#6a5a44', padding:'14px 16px 4px',
-              display:'flex', alignItems:'baseline', gap:8,
+              fontSize:14, fontWeight:700,
+              color:'#6a5a44', padding:'12px 12px 10px',
+              display:'flex', alignItems:'center', gap:8,
+              borderBottom:'1px solid rgba(120,80,40,.14)',
             }}>
-              <span>folders</span>
-              <span style={{
-                fontSize:11, color:T.muted,
-                fontFamily: (tweaks.font || 'Inter') + ', system-ui, sans-serif',
-                fontWeight:500,
-              }}>
-                — {realFolders.length}
-              </span>
-              <div style={{flex:1}}/>
+              <span style={{flex:1}}>Folders</span>
               <button onClick={onCreateFolder} title="New folder" style={{
-                background:'transparent', border:'none', color:T.muted, fontSize:20,
-                cursor:'pointer', padding:'0 4px', lineHeight:1,
-                fontFamily: T.bodyFont, fontWeight:700,
-              }}>+</button>
+                height:26, padding:'0 10px', borderRadius:6,
+                background:'transparent', color:'#6a5a44',
+                border:'1px solid rgba(120,80,40,.28)',
+                fontWeight:600, fontSize:12, cursor:'pointer',
+                display:'flex', alignItems:'center', gap:5,
+              }}>
+                <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span> folder
+              </button>
               <button onClick={()=>setOpen(false)} title="Hide" style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
@@ -2545,20 +2542,16 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           }}>
             {isPaper ? (
               <button onClick={onCreateNote} style={{
-                flex:1, background:'#fdf4c5', color:'#4a3a12',
-                border:'1px solid rgba(120,80,40,.28)', borderRadius:3,
-                padding:'9px 12px', cursor:'pointer',
-                display:'flex', alignItems:'center', justifyContent:'center', gap:10,
-                fontFamily: T.bodyFont, fontSize:19, fontWeight:700,
-                whiteSpace:'nowrap', lineHeight:1.1,
+                flex:1, height:30, background:'#fdf4c5', color:'#4a3a12',
+                border:'1px solid rgba(120,80,40,.28)', borderRadius:6,
+                padding:'0 12px', cursor:'pointer',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                fontSize:12, fontWeight:700, whiteSpace:'nowrap',
                 boxShadow:'0 1px 0 #fff inset, 0 2px 0 rgba(60,40,20,.06), 0 6px 14px rgba(60,40,20,.08)',
               }}>
-                <span>+ new sticky</span>
-                <kbd style={{
-                  fontFamily:'ui-monospace, monospace', fontSize:10, fontWeight:600,
-                  background:'rgba(60,40,20,.18)', color:'#4a3a12',
-                  padding:'2px 6px', borderRadius:2,
-                }}>N</kbd>
+                <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span>
+                new sticky
+                <kbd style={{fontFamily:'ui-monospace, monospace', fontSize:9, background:'rgba(60,40,20,.18)', color:'#4a3a12', padding:'1px 4px', borderRadius:3, marginLeft:2}}>N</kbd>
               </button>
             ) : (
               <button onClick={onCreateNote} style={{

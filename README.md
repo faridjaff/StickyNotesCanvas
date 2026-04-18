@@ -27,7 +27,7 @@ This is that app. It runs on **Linux, macOS, and in the browser**.
 
 ## Screenshots
 
-**Your whole desk, at a glance.** Pan, zoom, and drop notes wherever they feel right. `[[wiki-links]]` between notes render as dashed arrows on the canvas.
+**Your whole desk, at a glance.** Pan, zoom, and drop notes wherever they feel right. Link two notes by clicking the link icon on one and then the other — connections show up as dashed arrows on the canvas.
 
 ![Workspace overview](readme-assets/01-hero.png)
 
@@ -48,7 +48,7 @@ Paper is the default. Flat if you want something quieter. Terminal if you've mad
 </tr>
 </table>
 
-**Close up.** Markdown, tags, pushpins, link arrows. Click the red pushpin in the corner to pin — pinned notes stay on top.
+**Close up.** Markdown body, link arrows, color-coded folder badges. Click the red pushpin in a note's header — pinned notes follow you into every folder, so the important stuff is always one click away.
 
 ![Close-up of notes with link arrow](readme-assets/04-closeup.png)
 

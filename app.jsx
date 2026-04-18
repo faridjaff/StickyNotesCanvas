@@ -40,34 +40,34 @@ const SEED = {
   notes: [
     { id: "n1", folder: "home", title: "Groceries",
       body: "# Weekend run\n- **Sourdough** from Arnaud's\n- _olive oil_ — the green one\n- Tomatoes (vine)\n- Parmesan",
-      color: "yellow", x: 60, y: 60, w: 280, h: 240, pinned: true, tags: ["errand"] },
+      color: "yellow", x: 60, y: 60, w: 280, h: 240, pinned: true },
     { id: "n2", folder: "home", title: "Dinner: friday",
       body: "Cacio e pepe, simple salad. Wine: the Gavi in the rack.\n\nNeed: parm, pepper, lemon.",
-      color: "peach", x: 370, y: 120, w: 260, h: 180, pinned: false, tags: ["cooking"] },
+      color: "peach", x: 370, y: 120, w: 260, h: 180, pinned: false },
     { id: "n3", folder: "eng", title: "Kernel 6.9 notes",
       body: "## Build flags\n`CONFIG_PREEMPT_RT=y`\n\n- check scheduler patch\n- rerun `make menuconfig`\n- benchmark against 6.8",
-      color: "blue", x: 60, y: 70, w: 300, h: 230, pinned: false, tags: ["linux","kernel"] },
+      color: "blue", x: 60, y: 70, w: 300, h: 230, pinned: false },
     { id: "n4", folder: "workflow", title: "Standup",
       body: "**Yday:** fixed dnd bug\n**Today:** review PR #4412\n**Blockers:** waiting on infra",
-      color: "green", x: 70, y: 60, w: 260, h: 180, pinned: true, tags: ["meeting"] },
+      color: "green", x: 70, y: 60, w: 260, h: 180, pinned: true },
     { id: "n5", folder: "personal", title: "Reading list",
       body: "- The Pragmatic Programmer\n- Thinking in Systems — _Meadows_\n- Re-read: Unix Philosophy",
-      color: "lilac", x: 80, y: 80, w: 270, h: 200, pinned: false, tags: ["books"] },
+      color: "lilac", x: 80, y: 80, w: 270, h: 200, pinned: false },
     { id: "n6", folder: "home", title: "Router reboot",
       body: "ssh admin@10.0.0.1\n`reboot now`\n\nCheck DHCP lease table afterwards.",
-      color: "pink", x: 660, y: 110, w: 260, h: 170, pinned: false, tags: ["infra"] },
+      color: "pink", x: 660, y: 110, w: 260, h: 170, pinned: false },
     { id: "n7", folder: "sprints", title: "Sprint 42 scope",
       body: "## This sprint\n- onboarding polish\n- dnd quick fix\n- dogfood search",
-      color: "yellow", x: 80, y: 60, w: 280, h: 200, pinned: false, tags: ["planning"] },
+      color: "yellow", x: 80, y: 60, w: 280, h: 200, pinned: false },
     { id: "n8", folder: "reviews", title: "PR checklist",
       body: "- tests pass\n- no new warnings\n- **a11y** audit\n- screenshot attached",
-      color: "green", x: 90, y: 80, w: 260, h: 180, pinned: false, tags: [] },
+      color: "green", x: 90, y: 80, w: 260, h: 180, pinned: false },
     { id: "n9", folder: "eng", title: "Button variants",
       body: "primary / secondary / ghost / destructive\n\nfocus ring: 2px accent, 2px offset",
-      color: "blue", x: 90, y: 70, w: 280, h: 170, pinned: false, tags: ["design-system"] },
+      color: "blue", x: 90, y: 70, w: 280, h: 170, pinned: false },
     { id: "n10", folder: "workflow", title: "Goals Q2",
       body: "## Goals\n1. Ship sync\n2. Offline mode\n3. 1k weekly actives",
-      color: "peach", x: 360, y: 80, w: 260, h: 180, pinned: false, tags: [] },
+      color: "peach", x: 360, y: 80, w: 260, h: 180, pinned: false },
   ],
   links: [
     { id: "l1", from: "n1", to: "n2" },
@@ -429,7 +429,7 @@ function notesToClipboardText(notes, links) {
     notes: notes.map(n => ({
       id: n.id,  // preserved only for in-payload link endpoint mapping; remapped on paste
       title: n.title, body: n.body, color: n.color,
-      w: n.w, h: n.h, tags: n.tags, pinned: !!n.pinned,
+      w: n.w, h: n.h, pinned: !!n.pinned,
     })),
     links: subLinks.map(l => ({ from: l.from, to: l.to })),
   };
@@ -711,7 +711,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   const filteredNotes = useMemo(() => {
     if (!query.trim()) return folderNotes;
     const q = query.toLowerCase();
-    return folderNotes.filter(n => (n.title+' '+n.body+' '+(n.tags||[]).join(' ')).toLowerCase().includes(q));
+    return folderNotes.filter(n => (n.title+' '+n.body).toLowerCase().includes(q));
   }, [folderNotes, query]);
 
   /* ----- actions ----- */
@@ -732,7 +732,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     const nx = typeof x === 'number' ? x : (120 + Math.random()*240);
     const ny = typeof y === 'number' ? y : (100 + Math.random()*180);
     const n = { id, folder: targetFolder, title:'New note', body:'', color,
-      x: nx, y: ny, w:260, h:180, pinned:false, tags:[] };
+      x: nx, y: ny, w:260, h:180, pinned:false };
     takeSnapshot();
     setNotes(ns => [...ns, n]);
     setTimeout(()=>focusNote(id), 0);
@@ -863,7 +863,6 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
         h: typeof p.h === 'number' ? p.h : 180,
         x: baseX + STEP * idx,
         y: baseY + STEP * idx,
-        tags: Array.isArray(p.tags) ? p.tags : [],
         pinned: !!p.pinned,
         z: zRef.current,
       };
@@ -2189,7 +2188,6 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             {divider:true},
             {label:'Change color ▶', submenu: NOTE_COLORS.map(c=>({label:c.name, dot:c.paper, onClick:()=>onChange({color:c.id})}))},
             childFolders.length ? {label:'Move to folder ▶', submenu: childFolders.map(f=>({label:f.name, dot:f.hue, onClick:()=>onMoveToFolder(f.id)}))} : null,
-            {label:'Add tag…', onClick:()=>{ const t = prompt('Tag:'); if(t) onChange({tags:[...(note.tags||[]), t]}); }},
             {divider:true},
             {label:'Delete…', destructive:true, onClick:onDelete},
           ].filter(Boolean)}/>
@@ -2739,7 +2737,7 @@ function TweakPanel({T, tweaks, update, onClose}) {
       <Label>Link overlay</Label>
       <div style={{display:'flex', alignItems:'center', gap:8}}>
         <input type="checkbox" checked={tweaks.showLinks} onChange={e=>update({showLinks:e.target.checked})}/>
-        <span style={{fontSize:12}}>Show [[wiki links]] as arrows</span>
+        <span style={{fontSize:12}}>Show link arrows between notes</span>
       </div>
       <Label>Note rotation (paper theme)</Label>
       <div style={{display:'flex', alignItems:'center', gap:8}}>

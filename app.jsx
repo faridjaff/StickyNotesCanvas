@@ -1421,7 +1421,17 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           cursor:'grab', userSelect:'none', flex:'none',
           fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
         }}>
-        {note.pinned && <span title="Pinned" style={{fontSize:11}}>📌</span>}
+        <button onClick={e=>{e.stopPropagation(); onChange({pinned:!note.pinned});}}
+          title={note.pinned ? 'Pinned (visible in every folder) · click to unpin' : 'Pin to keep visible in every folder'}
+          style={{...btnS(ink), padding:2}}>
+          <svg width="14" height="14" viewBox="0 0 24 24"
+               fill={note.pinned ? '#dc2626' : 'none'}
+               stroke={note.pinned ? '#dc2626' : ink}
+               strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="17" x2="12" y2="22"/>
+            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/>
+          </svg>
+        </button>
         {folder && <span title={folder.name} style={{width:6, height:6, background:folder.hue, borderRadius:'50%', flex:'none'}}/>}
         {editingTitle ? (
           <input autoFocus value={note.title}
@@ -1435,11 +1445,6 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             {note.title || <span style={{opacity:.4}}>Untitled</span>}
           </div>
         )}
-        <button onClick={e=>{e.stopPropagation(); onChange({pinned:!note.pinned});}} title="Pin" style={btnS(ink)}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill={note.pinned?ink:'none'} stroke={ink} strokeWidth="2">
-            <path d="M12 2v7M7 9h10l-2 5H9L7 9zM12 14v8"/>
-          </svg>
-        </button>
         {(() => {
           // Badge count reflects all links on this note, including ones whose
           // other endpoint lives in another folder (pinned notes follow the

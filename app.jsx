@@ -166,6 +166,11 @@ function useStickyStore() {
   const [store, setStore] = useState(null);
   const saveRef = useRef(null);
   const storeRef = useRef(null);
+  // In-memory undo/redo stacks. We only retain snapshots of user-content
+  // slices ({notes, folders, folderOrder, pins, links}) — not UI state like
+  // tweaks/cwd/drawer — and cap the history at UNDO_LIMIT entries.
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
 
   useEffect(() => { storeRef.current = store; }, [store]);
 
@@ -270,7 +275,73 @@ function useStickyStore() {
     } catch (err) { console.warn('[import]', err); }
   }, [scheduleSave]);
 
-  return { store, setKey, exportNow, importNow };
+  /* ---------- In-memory undo/redo ---------- */
+  // Snapshots capture only the user-content slices of the store. UI state
+  // (tweaks, cwd, view, drawer, renamingFolder, etc.) is intentionally left
+  // out so Ctrl+Z doesn't flip the theme or close the drawer.
+  const UNDO_LIMIT = 20;
+  const UNDO_KEYS = ['notes', 'folders', 'folderOrder', 'pins', 'links'];
+
+  const pickSnapshot = (src) => {
+    const out = {};
+    for (const k of UNDO_KEYS) if (k in src) out[k] = src[k];
+    return JSON.stringify(out);
+  };
+
+  // Record the CURRENT store onto the undo stack and clear the redo stack.
+  // Call this BEFORE mutating state for a tracked user action (create note,
+  // delete note, move to folder, delete folder, pin toggle). Exactly once
+  // per user gesture — a batch op (e.g. multi-delete) is one snapshot.
+  const takeSnapshot = useCallback(() => {
+    const current = storeRef.current;
+    if (!current) return;
+    undoStackRef.current.push(pickSnapshot(current));
+    if (undoStackRef.current.length > UNDO_LIMIT) {
+      undoStackRef.current.shift();
+    }
+    redoStackRef.current = [];
+  }, []);
+
+  const undo = useCallback(() => {
+    if (!undoStackRef.current.length) return;
+    const current = storeRef.current;
+    if (!current) return;
+    // Save current state onto the redo stack so redo can restore it.
+    redoStackRef.current.push(pickSnapshot(current));
+    if (redoStackRef.current.length > UNDO_LIMIT) {
+      redoStackRef.current.shift();
+    }
+    const raw = undoStackRef.current.pop();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return; }
+    setStore(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, ...parsed };
+      scheduleSave(next);
+      return next;
+    });
+  }, [scheduleSave]);
+
+  const redo = useCallback(() => {
+    if (!redoStackRef.current.length) return;
+    const current = storeRef.current;
+    if (!current) return;
+    undoStackRef.current.push(pickSnapshot(current));
+    if (undoStackRef.current.length > UNDO_LIMIT) {
+      undoStackRef.current.shift();
+    }
+    const raw = redoStackRef.current.pop();
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return; }
+    setStore(prev => {
+      if (!prev) return prev;
+      const next = { ...prev, ...parsed };
+      scheduleSave(next);
+      return next;
+    });
+  }, [scheduleSave]);
+
+  return { store, setKey, exportNow, importNow, takeSnapshot, undo, redo };
 }
 
 function Loading() {
@@ -555,7 +626,7 @@ function MobileDemoBanner() {
 /* APP                                                                  */
 /* ==================================================================== */
 function App() {
-  const { store, setKey, exportNow, importNow } = useStickyStore();
+  const { store, setKey, exportNow, importNow, takeSnapshot, undo, redo } = useStickyStore();
   const update = useUpdateCheck();
   if (!store) return <Loading/>;
   return (
@@ -563,13 +634,14 @@ function App() {
       <MobileDemoBanner />
       <div style={{flex:'1 1 auto', minHeight:0, position:'relative'}}>
         {update.available && <UpdateBanner info={update.available} onDismiss={update.dismiss}/>}
-        <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow} />
+        <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow}
+          takeSnapshot={takeSnapshot} undo={undo} redo={redo} />
       </div>
     </div>
   );
 }
 
-function AppInner({ store, setKey, exportNow, importNow }) {
+function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, redo }) {
   const tweaks   = store.tweaks;
   const folders  = store.folders;
   const notes    = store.notes;
@@ -646,7 +718,7 @@ function AppInner({ store, setKey, exportNow, importNow }) {
   const bringToFront = (id) => { zRef.current+=1; const z=zRef.current; setNotes(ns => ns.map(n=>n.id===id?{...n,z}:n)); };
   const focusNote = (id) => { bringToFront(id); setSelectedIds(new Set([id])); };
   const updateNote = (id, patch) => setNotes(ns => ns.map(n => n.id===id ? {...n, ...patch} : n));
-  const deleteNote = (id) => { setNotes(ns => ns.filter(n => n.id!==id)); setConfirmDel(null); };
+  const deleteNote = (id) => { takeSnapshot(); setNotes(ns => ns.filter(n => n.id!==id)); setConfirmDel(null); };
   const updateFolder = (id, patch) => setFolders(fs => ({...fs, [id]: {...fs[id], ...patch}}));
 
   const createNote = (x, y) => {
@@ -661,6 +733,7 @@ function AppInner({ store, setKey, exportNow, importNow }) {
     const ny = typeof y === 'number' ? y : (100 + Math.random()*180);
     const n = { id, folder: targetFolder, title:'New note', body:'', color,
       x: nx, y: ny, w:260, h:180, pinned:false, tags:[] };
+    takeSnapshot();
     setNotes(ns => [...ns, n]);
     setTimeout(()=>focusNote(id), 0);
   };
@@ -678,6 +751,9 @@ function AppInner({ store, setKey, exportNow, importNow }) {
   };
 
   const deleteFolder = (id) => {
+    // One snapshot for the folder + its notes + folderOrder removal; Ctrl+Z
+    // restores all three together.
+    takeSnapshot();
     setFolders(fs => { const next = {...fs}; delete next[id]; return next; });
     setNotes(ns => ns.filter(n => n.folder !== id));
     setFolderOrder(order => (order || []).filter(fid => fid !== id));
@@ -686,6 +762,13 @@ function AppInner({ store, setKey, exportNow, importNow }) {
   };
 
   const moveNoteToFolder = (noteId, folderId) => {
+    // Only snapshot if the folder is actually changing — drag-to-same-folder
+    // (e.g. a header drag that hovers a drop zone briefly) shouldn't log an
+    // undoable step. This mirrors the "pin-drop across folders WITHOUT a
+    // folder change" exclusion in the task spec.
+    const current = notes.find(n => n.id === noteId);
+    if (!current || current.folder === folderId) return;
+    takeSnapshot();
     setNotes(ns => ns.map(n => n.id===noteId ? {...n, folder: folderId, x: 80+Math.random()*100, y: 80+Math.random()*80} : n));
   };
 
@@ -695,6 +778,12 @@ function AppInner({ store, setKey, exportNow, importNow }) {
   const moveNotesToFolder = (noteIds, folderId) => {
     if (!noteIds || !noteIds.length) return;
     const idSet = new Set(noteIds);
+    // Skip if NO selected note would actually change folder — mirrors the
+    // single-move guard above. If even one crosses folders, we snapshot once
+    // for the whole batch so Ctrl+Z reverts the entire cluster move.
+    const anyCrossing = notes.some(n => idSet.has(n.id) && n.folder !== folderId);
+    if (!anyCrossing) return;
+    takeSnapshot();
     setNotes(ns => {
       const targets = ns.filter(n => idSet.has(n.id));
       if (!targets.length) return ns;
@@ -779,6 +868,9 @@ function AppInner({ store, setKey, exportNow, importNow }) {
         z: zRef.current,
       };
     });
+    // Single snapshot covers both the notes push and the follow-up links push
+    // below, so one Ctrl+Z reverts the whole paste (notes + restored links).
+    takeSnapshot();
     setNotes(ns => [...ns, ...fresh]);
 
     // Recreate any links whose BOTH endpoints landed in this paste. Drop
@@ -840,6 +932,29 @@ function AppInner({ store, setKey, exportNow, importNow }) {
     }).filter(Boolean);
   }, [links, notes, filteredNotes, tweaks.showLinks]);
 
+  // Ctrl/Cmd+Z → undo, Ctrl/Cmd+Shift+Z → redo. CRITICAL: when the keyboard
+  // event target is a text field (input, textarea, contentEditable), we must
+  // NOT preventDefault and NOT fire our undo/redo — the browser's native text
+  // undo needs to win for edits-in-progress on a note body/title. We gate on
+  // document.activeElement so a focused textarea swallows these chords even
+  // if the event was dispatched on document.body.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key.toLowerCase() !== 'z') return;
+      const ae = document.activeElement;
+      if (ae) {
+        const tag = ae.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || ae.isContentEditable) return;
+      }
+      e.preventDefault();
+      if (e.shiftKey) { redo && redo(); }
+      else            { undo && undo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
   /* ----- keyboard ----- */
   useEffect(() => {
     const h = (e) => {
@@ -862,6 +977,9 @@ function AppInner({ store, setKey, exportNow, importNow }) {
       if ((e.key==='Delete' || e.key==='Backspace') && selectedIds.size > 0) {
         e.preventDefault();
         const ids = selectedIds;
+        // Batch multi-delete: one snapshot covers the notes + link cleanup so
+        // a single Ctrl+Z reverts the whole delete, not just the links.
+        takeSnapshot();
         setNotes(ns => ns.filter(n => !ids.has(n.id)));
         setLinks(ls => ls.filter(l => !ids.has(l.from) && !ids.has(l.to)));
         setSelectedIds(new Set());
@@ -922,6 +1040,7 @@ function AppInner({ store, setKey, exportNow, importNow }) {
         view={store.view}
         setView={(v) => setKey('view', v)}
         drawerOpen={store.drawer}
+        takeSnapshot={takeSnapshot}
       />
 
       {confirmDel && (
@@ -1196,7 +1315,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
   links, addLink, removeLink, linksFor,
   updateNote, bringToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
   jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote, onCopyNotes,
-  view, setView, drawerOpen}) {
+  view, setView, drawerOpen, takeSnapshot}) {
 
   const [deskMenu, setDeskMenu] = useState(null);
   const [linkMenu, setLinkMenu] = useState(null);
@@ -1645,6 +1764,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
               }
             }}
             onChange={(patch)=>updateNote(n.id, patch)}
+            onTogglePin={()=>{ takeSnapshot && takeSnapshot(); updateNote(n.id, {pinned: !n.pinned}); }}
             onDelete={()=>onDeleteNote(n.id)}
             onLinkClick={jumpToNote}
             childFolders={Object.values(folders).filter(f=>f.id!==n.folder && f.id!=='root')}
@@ -1770,7 +1890,7 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 /* STICKY NOTE                                                           */
 /* ==================================================================== */
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
-  onFocus, onChange, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
+  onFocus, onChange, onTogglePin, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
   allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote, onCopy}) {
   const zRef = useRef(zoom); zRef.current = zoom;
   const [editing, setEditing] = useState(false);
@@ -1917,7 +2037,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               e.preventDefault();
               return;
             }
-            onChange({pinned:!note.pinned});
+            if (onTogglePin) onTogglePin(); else onChange({pinned:!note.pinned});
           }}
           title={note.pinned ? 'Pinned (visible in every folder) · click to unpin' : 'Pin to keep visible in every folder'}
           style={{...btnS(ink), padding:2}}>
@@ -2058,7 +2178,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             {divider:true},
             {label:'Edit title', onClick:()=>setEditingTitle(true)},
             {label:'Edit body', onClick:()=>setEditing(true)},
-            {label: note.pinned?'Unpin':'Pin to top', onClick:()=>onChange({pinned:!note.pinned})},
+            {label: note.pinned?'Unpin':'Pin to top', onClick:()=>{ if (onTogglePin) onTogglePin(); else onChange({pinned:!note.pinned}); }},
             {divider:true},
             {label:'Link to note ▶', submenu: candidates.map(n => ({
               label: n.title || 'Untitled', dot: (NOTE_COLORS.find(c=>c.id===n.color)||{}).paper,

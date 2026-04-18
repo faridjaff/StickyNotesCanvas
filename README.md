@@ -82,16 +82,16 @@ A short list, because the whole point of this project is that somebody should ha
 
 Grab the latest from [**Releases**](https://github.com/faridjaff/sticky-notes/releases/latest) and pick the file for your platform:
 
+#### Note for macOS
+
+The macOS builds are not code-signed. If your Mac refuses to open the downloaded app, build from source instead — instructions below. If this project gathers enough traction, I'll look into the Apple Developer Program so future Mac builds are signed and open with no friction.
+
 | Platform | File | How to install |
 |---|---|---|
 | **Ubuntu / Debian** | `sticky-notes_<ver>_amd64.deb` | `sudo dpkg -i sticky-notes_<ver>_amd64.deb` |
 | **Linux (portable)** | `Sticky Notes-<ver>.AppImage` | `chmod +x` and double-click — no install needed |
 | **macOS — Apple Silicon (M-series)** | `Sticky Notes-<ver>-arm64.dmg` | mount → drag to `/Applications` |
 | **macOS — Intel** | `Sticky Notes-<ver>.dmg` | mount → drag to `/Applications` |
-
-#### Note for macOS
-
-The macOS builds are not code-signed. If your Mac refuses to open the downloaded app, build from source instead — instructions below.
 
 ### Web (no install)
 

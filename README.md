@@ -19,15 +19,9 @@ Grab the latest from [**Releases**](https://github.com/faridjaff/sticky-notes/re
 | **macOS — Apple Silicon (M-series)** | `Sticky Notes-<ver>-arm64.dmg` | mount → drag to `/Applications` |
 | **macOS — Intel** | `Sticky Notes-<ver>.dmg` | mount → drag to `/Applications` |
 
-#### macOS Gatekeeper note
+#### Note for macOS
 
-The Mac builds aren't code-signed (no Apple Developer cert). On first launch macOS may say *"Sticky Notes is damaged and can't be opened"*. The app isn't damaged — Gatekeeper just blocks unsigned downloads. To clear the quarantine flag once:
-
-```bash
-xattr -cr /Applications/Sticky\ Notes.app
-```
-
-If your Mac is managed by an organization (corporate MDM) and that command is blocked, **build from source** instead — locally-built apps don't get the quarantine flag.
+The macOS builds are not code-signed. If your Mac refuses to open the downloaded app, build from source instead — instructions below.
 
 ### Web (no install)
 
@@ -51,25 +45,27 @@ cd sticky-notes
 npm install
 ```
 
-### Run in dev mode (no install needed)
+### Build and install
+
+#### Linux
 
 ```bash
-npm start
-```
-
-Electron launches the app directly from source. Quit with Cmd/Ctrl+Q.
-
-### Build installable artifacts
-
-```bash
-# Linux: produces .deb + .AppImage in dist/
 npm run build:linux
-
-# macOS: produces .dmg + .zip for both arm64 and x64 in dist/
-npm run build:mac
+sudo dpkg -i "dist/sticky-notes_$(node -p 'require(\"./package.json\").version')_amd64.deb"
 ```
 
-Then install whichever file fits your machine (see the table above).
+The app appears in your Activities menu as **Sticky Notes**. To uninstall later: `sudo apt remove sticky-notes`.
+
+#### macOS
+
+```bash
+npm run build:mac
+cp -R "dist/mac-arm64/Sticky Notes.app" /Applications/
+```
+
+(Use `dist/mac/Sticky Notes.app` instead if you're on an Intel Mac.)
+
+Launch from Spotlight (`Cmd+Space` → "Sticky Notes") or from Launchpad. To uninstall later, drag the app from `/Applications` to the Trash.
 
 ---
 

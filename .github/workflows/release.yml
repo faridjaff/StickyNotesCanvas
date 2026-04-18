@@ -1,0 +1,54 @@
+name: Release
+
+# Triggered by pushing a tag like v1.0.0, v1.0.1, v1.2.3, etc.
+# Runs builds for Linux and macOS in parallel on GitHub-hosted runners,
+# then attaches every produced artifact to the GitHub Release named
+# after the tag. The release is auto-created if it doesn't exist yet.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required so the release-upload action can write to the Releases API
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (electron-builder picks the host platform)
+        run: npm run build
+        env:
+          # Skip code-signing on macOS so the build doesn't fail without an Apple Dev cert.
+          # Users get a Gatekeeper warning on first launch; right-click → Open bypasses it.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Attach artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.dmg
+            dist/*.zip
+          fail_on_unmatched_files: false   # Linux job won't have .dmg, Mac job won't have .deb — that's fine
+          generate_release_notes: true

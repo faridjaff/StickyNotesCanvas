@@ -1655,6 +1655,17 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
 
   const isTerm = tweaks.theme==='terminal';
   const [dragOverFolderId, setDragOverFolderId] = useState(null);
+  // Right-click context menu on a folder row. Shape: {x, y, folderId} | null.
+  const [folderMenu, setFolderMenu] = useState(null);
+
+  // Close the folder context menu on Escape (outside-click is handled by
+  // the shared ContextMenu component itself).
+  useEffect(() => {
+    if (!folderMenu) return;
+    const onKey = (e) => { if (e.key === 'Escape') setFolderMenu(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [folderMenu]);
 
   // Ordered folders = user-defined order first (if saved), then any brand-new
   // folders not yet in the order appended alphabetically. Stale IDs are dropped.
@@ -1723,6 +1734,19 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
         }}
         onClick={()=>setCurrentFolder(f.id)}
         onDoubleClick={()=>!isAll && setRenamingFolder(f.id)}
+        onContextMenu={e=>{
+          // Skip the All notes root row — it's not a real folder.
+          if (isAll) return;
+          e.preventDefault();
+          e.stopPropagation();
+          // ContextMenu uses position:absolute relative to its nearest
+          // positioned ancestor (the drawer wrapper). Translate viewport
+          // coords to coords inside that wrapper. Walk up to find it.
+          let host = e.currentTarget.parentElement;
+          while (host && getComputedStyle(host).position === 'static') host = host.parentElement;
+          const rect = host ? host.getBoundingClientRect() : {left:0, top:0};
+          setFolderMenu({x: e.clientX - rect.left, y: e.clientY - rect.top, folderId: f.id});
+        }}
         style={{
           position:'relative', display:'flex', gap:10, padding:'11px 12px', marginBottom:6,
           borderRadius: isTerm?2:8,
@@ -1822,7 +1846,43 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
               </div>
             )}
             {realFolders.map(f => renderRow(f, false))}
+            {/* Faint full-width affordance to create a folder, sitting in the
+                empty space below the last folder row. The original "+ folder"
+                button in the header still works. */}
+            <button onClick={()=>onCreateFolder()} title="Create folder" style={{
+              width:'100%', height:30, marginTop: realFolders.length>0 ? 4 : 12,
+              padding:'0 10px', borderRadius: isTerm?2:6,
+              background:'transparent', color:T.muted,
+              border:`1px dashed ${T.panelBorder}`,
+              fontSize:12, fontWeight:600, cursor:'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+              transition:'background .12s, color .12s, transform .12s',
+              fontFamily: isTerm?T.bodyFont:'inherit',
+            }}
+              onMouseEnter={e=>{
+                e.currentTarget.style.background = isTerm?'#131a23':'rgba(0,0,0,.04)';
+                e.currentTarget.style.color = T.panelText;
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={e=>{
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = T.muted;
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span> Create folder
+            </button>
           </div>
+
+          {folderMenu && (
+            <ContextMenu T={T} x={folderMenu.x} y={folderMenu.y}
+              onClose={()=>setFolderMenu(null)}
+              items={[
+                {label:'Rename', onClick:()=>setRenamingFolder(folderMenu.folderId)},
+                {label:'Delete folder', destructive:true, onClick:()=>onDeleteFolder(folderMenu.folderId)},
+              ]}
+            />
+          )}
 
           <div style={{
             padding:'8px 12px', borderTop:`1px solid ${T.hairline}`, background: tweaks.theme==='terminal'?'#0a0c10':'rgba(0,0,0,.02)',

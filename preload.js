@@ -5,6 +5,12 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   save:       (data) => ipcRenderer.invoke('notes:save', data),
   exportFile: (data) => ipcRenderer.invoke('notes:export', data),
   importFile: () => ipcRenderer.invoke('notes:import'),
+
+  // Version of the running Electron build, captured at preload time so the
+  // renderer can synchronously compare to the latest GitHub release tag.
+  appVersion: ipcRenderer.sendSync('app:version-sync'),
+  // Open https URLs in the user's default browser. Used by the update banner.
+  openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   onMenuExport: (cb) => {
     const wrapped = (_event, ...args) => cb(...args);
     ipcRenderer.on('menu:export', wrapped);

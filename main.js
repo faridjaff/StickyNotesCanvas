@@ -1,7 +1,20 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { load: loadNotes, save: saveNotes } = require('./storage.js');
+
+// Synchronous IPC for the preload script to fetch the running app's version
+// at load time, so the renderer can compare it to whatever the GitHub
+// Releases API reports as the latest tag.
+ipcMain.on('app:version-sync', (e) => { e.returnValue = app.getVersion(); });
+
+// Open external URLs (e.g. the release download link) in the user's default
+// browser instead of inside the Electron BrowserWindow.
+ipcMain.handle('shell:open-external', async (_e, url) => {
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { ok: false };
+  try { await shell.openExternal(url); return { ok: true }; }
+  catch (err) { return { ok: false, error: err.message }; }
+});
 
 const userDataDir = () => app.getPath('userData');
 const notesPath   = () => path.join(userDataDir(), 'notes.json');

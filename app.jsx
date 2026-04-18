@@ -373,13 +373,113 @@ function clipboardTextToNotes(text) {
   } catch { return null; }
 }
 
+/* ---------- Update checker (Electron only) ----------
+ * Once per day on launch, fetches the latest GitHub release tag and
+ * compares to the running app's version. If newer (and the user hasn't
+ * dismissed it), surfaces an UpdateBanner with a one-click download
+ * link. Browser context is skipped — the hosted version always serves
+ * the current code. */
+function cmpSemver(a, b) {
+  const pa = a.split('.').map(n => parseInt(n, 10) || 0);
+  const pb = b.split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return 1;
+    if ((pa[i] || 0) < (pb[i] || 0)) return -1;
+  }
+  return 0;
+}
+
+function downloadUrlForPlatform(version) {
+  const p = (navigator.platform || '').toLowerCase();
+  if (p.includes('linux')) {
+    return `https://github.com/faridjaff/sticky-notes/releases/download/v${version}/sticky-notes_${version}_amd64.deb`;
+  }
+  // Mac (and anything else): point at the release page so the user picks
+  // arm64 vs Intel themselves.
+  return `https://github.com/faridjaff/sticky-notes/releases/tag/v${version}`;
+}
+
+function useUpdateCheck() {
+  const [available, setAvailable] = useState(null);
+  useEffect(() => {
+    if (!window.stickyAPI) return;  // Skip in browser
+    const current = window.stickyAPI.appVersion || '0.0.0';
+    const dismissed = (() => { try { return localStorage.getItem('stickies.dismissedUpdate') || ''; } catch { return ''; } })();
+    const lastCheckRaw = (() => { try { return localStorage.getItem('stickies.lastUpdateCheck'); } catch { return null; } })();
+    const lastCheck = lastCheckRaw ? parseInt(lastCheckRaw, 10) : 0;
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    if (Date.now() - lastCheck < ONE_DAY) return;
+
+    (async () => {
+      try {
+        const res = await fetch('https://api.github.com/repos/faridjaff/sticky-notes/releases/latest', {
+          headers: { 'Accept': 'application/vnd.github+json' },
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        try { localStorage.setItem('stickies.lastUpdateCheck', String(Date.now())); } catch {}
+        const tag = (json.tag_name || '').replace(/^v/, '');
+        if (!tag) return;
+        if (cmpSemver(tag, current) <= 0) return;     // Not newer
+        if (tag === dismissed) return;                 // User already said no to this version
+        setAvailable({ version: tag, url: downloadUrlForPlatform(tag) });
+      } catch { /* network error — silent */ }
+    })();
+  }, []);
+
+  const dismiss = useCallback(() => {
+    if (available) {
+      try { localStorage.setItem('stickies.dismissedUpdate', available.version); } catch {}
+    }
+    setAvailable(null);
+  }, [available]);
+
+  return { available, dismiss };
+}
+
+function UpdateBanner({ info, onDismiss }) {
+  const open = () => {
+    if (window.stickyAPI && window.stickyAPI.openExternal) {
+      window.stickyAPI.openExternal(info.url);
+    } else {
+      window.open(info.url, '_blank', 'noopener');
+    }
+  };
+  return (
+    <div style={{
+      position:'fixed', top:8, left:'50%', transform:'translateX(-50%)',
+      background:'#1f2937', color:'#fff', padding:'8px 12px 8px 14px',
+      borderRadius:8, fontSize:13, zIndex:30000,
+      display:'flex', gap:10, alignItems:'center',
+      boxShadow:'0 6px 20px rgba(0,0,0,.25)',
+      fontFamily:'Inter, system-ui, sans-serif',
+    }}>
+      <span>New version <b>v{info.version}</b> available</span>
+      <button onClick={open} style={{
+        background:'#3b82f6', color:'#fff', border:'none', padding:'5px 12px',
+        borderRadius:4, cursor:'pointer', fontWeight:600, fontSize:12,
+      }}>Download</button>
+      <button onClick={onDismiss} aria-label="Dismiss" style={{
+        background:'transparent', border:'none', color:'#cbd5e1', cursor:'pointer',
+        fontSize:18, lineHeight:1, padding:'0 2px',
+      }}>×</button>
+    </div>
+  );
+}
+
 /* ==================================================================== */
 /* APP                                                                  */
 /* ==================================================================== */
 function App() {
   const { store, setKey, exportNow, importNow } = useStickyStore();
+  const update = useUpdateCheck();
   if (!store) return <Loading/>;
-  return <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow} />;
+  return (
+    <>
+      {update.available && <UpdateBanner info={update.available} onDismiss={update.dismiss}/>}
+      <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow} />
+    </>
+  );
 }
 
 function AppInner({ store, setKey, exportNow, importNow }) {

@@ -2589,14 +2589,9 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             }}>
               <span style={{flex:1}}>Folders</span>
               <button onClick={onCreateFolder} title="New folder" style={{
-                height:26, padding:'0 10px', borderRadius:6,
-                background:'transparent', color:'#6a5a44',
-                border:'1px solid rgba(120,80,40,.28)',
-                fontWeight:600, fontSize:12, cursor:'pointer',
-                display:'flex', alignItems:'center', gap:5,
-              }}>
-                <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span> folder
-              </button>
+                width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
+                color:T.muted, fontSize:18, lineHeight:1, padding:0, borderRadius:4,
+              }}>+</button>
               <button onClick={()=>setOpen(false)} title="Hide" style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
@@ -2609,12 +2604,9 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
                 {isTerm ? '// folders' : 'Folders'}
               </div>
               <button onClick={onCreateFolder} title="New folder" style={{
-                height:26, padding:'0 10px', borderRadius: isTerm?2:6,
-                background:'transparent', color:T.panelText, border:`1px solid ${T.panelBorder}`,
-                fontWeight:600, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', gap:5,
-              }}>
-                <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span> folder
-              </button>
+                width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
+                color:T.muted, fontSize:18, lineHeight:1, padding:0, borderRadius:4,
+              }}>+</button>
               <button onClick={()=>setOpen(false)} title="Hide" style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,

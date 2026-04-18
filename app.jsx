@@ -2692,7 +2692,7 @@ function StatusBar({T, tweaks, folderName, noteCount, folderCount}) {
       <span style={{opacity:.4}}>·</span>
       <span>auto-saved</span>
       <span style={{opacity:.4}}>·</span>
-      <span>local only</span>
+      <span title="This app only stores your notes locally on your device — no cloud sync, no account.">local only</span>
     </div>
   );
 }

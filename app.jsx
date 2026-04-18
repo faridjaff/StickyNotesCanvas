@@ -2156,10 +2156,15 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
   const moveFolder = (draggedId, targetId) => {
     if (draggedId === targetId) return;
     const currentOrder = realFolders.map(f => f.id);
+    const sourceIdx = currentOrder.indexOf(draggedId);
+    const targetIdxOrig = currentOrder.indexOf(targetId);
+    if (sourceIdx < 0 || targetIdxOrig < 0) return;
     const without = currentOrder.filter(id => id !== draggedId);
     const targetIdx = without.indexOf(targetId);
-    if (targetIdx < 0) return;
-    without.splice(targetIdx, 0, draggedId);
+    // Dragging downward: insert AFTER the target row so a one-row drop
+    // actually moves by one. Dragging upward: insert BEFORE the target.
+    const insertAt = sourceIdx < targetIdxOrig ? targetIdx + 1 : targetIdx;
+    without.splice(insertAt, 0, draggedId);
     setFolderOrder(without);
   };
 

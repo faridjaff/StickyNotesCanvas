@@ -2,6 +2,8 @@
 
 ![Sticky Notes banner](readme-assets/00-banner.png)
 
+### [→ Try the web demo](https://faridjaff.github.io/sticky-notes/)
+
 # Sticky Notes
 
 **A sticky notes app for Linux (yes, for Linux too!) and macOS that doesn't look like it escaped from a 2006 GNOME panel.**

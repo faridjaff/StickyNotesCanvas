@@ -485,10 +485,13 @@ function downloadUrlForPlatform(version) {
 
 function useUpdateCheck() {
   const [available, setAvailable] = useState(null);
+  // In-app modal state replaces the previous native-dialog round-trip to
+  // main. The native path renders as garbled glyphs inside snap confinement
+  // (font/sandbox issue); an HTML modal sidesteps that and looks the same
+  // everywhere.
+  const [info, setInfo] = useState(null);   // { title, message, detail? }
+  const isSnap = !!window.stickyAPI?.isSnap;
 
-  // Shared fetch+compare. `force` bypasses the throttle and reports the
-  // "up to date" / "check failed" outcomes back to the main process so it
-  // can show a native dialog — the scheduled once-a-day check stays silent.
   const runCheck = useCallback(async (force) => {
     if (!window.stickyAPI) return;
     const current = window.stickyAPI.appVersion || '0.0.0';
@@ -504,18 +507,29 @@ function useUpdateCheck() {
         headers: { 'Accept': 'application/vnd.github+json' },
       });
       if (!res.ok) {
-        if (force) window.stickyAPI.showUpdateResult?.({type:'error'});
+        if (force) setInfo({title:'Check for Updates', message:"Couldn't check for updates", detail:"Network error — make sure you're online."});
         return;
       }
       const json = await res.json();
       try { localStorage.setItem('stickies.lastUpdateCheck', String(Date.now())); } catch {}
       const tag = (json.tag_name || '').replace(/^v/, '');
       if (!tag) {
-        if (force) window.stickyAPI.showUpdateResult?.({type:'error'});
+        if (force) setInfo({title:'Check for Updates', message:"Couldn't check for updates", detail:"The release feed didn't return a version tag."});
         return;
       }
       if (cmpSemver(tag, current) <= 0) {
-        if (force) window.stickyAPI.showUpdateResult?.({type:'uptodate'});
+        if (force) setInfo({title:'Check for Updates', message:"You're on the latest version", detail:`Version ${current}`});
+        return;
+      }
+      // Snap users get auto-refresh handled by snapd. Don't bug them with
+      // the download-link banner — that path 404s for them anyway. On
+      // explicit force-check, surface a snap-friendly hint instead.
+      if (isSnap) {
+        if (force) setInfo({
+          title: 'Update Available',
+          message: `Version ${tag} is available`,
+          detail: `Snap will auto-refresh within 24 hours, or run:\n\nsudo snap refresh sticky-notes-canvas`,
+        });
         return;
       }
       // On an explicit manual check, ignore a prior dismissal — the user
@@ -524,18 +538,28 @@ function useUpdateCheck() {
       if (!force && tag === dismissed) return;
       setAvailable({ version: tag, url: downloadUrlForPlatform(tag) });
     } catch {
-      if (force) window.stickyAPI.showUpdateResult?.({type:'error'});
+      if (force) setInfo({title:'Check for Updates', message:"Couldn't check for updates", detail:"Network error — make sure you're online."});
     }
-  }, []);
+  }, [isSnap]);
 
-  // Once-a-day scheduled check on mount (silent).
-  useEffect(() => { runCheck(false); }, [runCheck]);
+  // Scheduled daily check skips entirely on snap (snapd handles refresh).
+  useEffect(() => { if (!isSnap) runCheck(false); }, [runCheck, isSnap]);
 
-  // Subscribe to the Help → Check for Updates… menu item.
+  // Help → Check for Updates… — fires regardless of channel.
   useEffect(() => {
     if (!window.stickyAPI?.onMenuCheckUpdates) return;
     return window.stickyAPI.onMenuCheckUpdates(() => runCheck(true));
   }, [runCheck]);
+
+  // Help → About — show app info in the same in-app modal.
+  useEffect(() => {
+    if (!window.stickyAPI?.onMenuAbout) return;
+    return window.stickyAPI.onMenuAbout(() => setInfo({
+      title: 'About',
+      message: `Sticky Notes ${window.stickyAPI.appVersion || ''}`.trim(),
+      detail: `Spatial sticky-notes canvas.\n\nSource: https://github.com/faridjaff/sticky-notes`,
+    }));
+  }, []);
 
   const dismiss = useCallback(() => {
     if (available) {
@@ -544,7 +568,9 @@ function useUpdateCheck() {
     setAvailable(null);
   }, [available]);
 
-  return { available, dismiss };
+  const closeInfo = useCallback(() => setInfo(null), []);
+
+  return { available, dismiss, info, closeInfo };
 }
 
 function UpdateBanner({ info, onDismiss }) {
@@ -573,6 +599,62 @@ function UpdateBanner({ info, onDismiss }) {
         background:'transparent', border:'none', color:'#cbd5e1', cursor:'pointer',
         fontSize:18, lineHeight:1, padding:'0 2px',
       }}>×</button>
+    </div>
+  );
+}
+
+/* ==================================================================== */
+/* INFO DIALOG                                                           */
+/* ==================================================================== */
+// In-app modal for short informational popups (Help → About, Help → Check
+// for Updates result). Replaces the previous native dialog.showMessageBox
+// path because native dialogs render as garbled glyphs inside snap
+// confinement (font/sandbox issue). HTML modal works the same in every
+// build channel and matches the app's aesthetic.
+function InfoDialog({ info, onClose }) {
+  useEffect(() => {
+    if (!info) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [info, onClose]);
+
+  if (!info) return null;
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(20,20,18,.5)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      zIndex:30000,
+    }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{
+        background:'#fbf7ef', color:'#2a241a',
+        border:'1px solid #d8cfbc', borderRadius:8,
+        boxShadow:'0 10px 40px rgba(0,0,0,.25)',
+        padding:'20px 24px', minWidth:320, maxWidth:480,
+        fontFamily:'Inter, system-ui, sans-serif',
+      }}>
+        {info.title && (
+          <div style={{
+            fontSize:11, fontWeight:600, color:'#7a6f5b',
+            marginBottom:8, textTransform:'uppercase', letterSpacing:.5,
+          }}>{info.title}</div>
+        )}
+        <div style={{fontSize:15, fontWeight:600, marginBottom:info.detail?12:18}}>
+          {info.message}
+        </div>
+        {info.detail && (
+          <div style={{
+            fontSize:13, color:'#5a4a3a', whiteSpace:'pre-wrap',
+            marginBottom:18, lineHeight:1.5,
+          }}>{info.detail}</div>
+        )}
+        <div style={{display:'flex', justifyContent:'flex-end'}}>
+          <button onClick={onClose} autoFocus style={{
+            background:'#d97757', color:'#fff', border:'none', borderRadius:6,
+            padding:'8px 18px', fontSize:13, fontWeight:600, cursor:'pointer',
+          }}>OK</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -668,6 +750,7 @@ function App() {
         <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow}
           takeSnapshot={takeSnapshot} undo={undo} redo={redo} />
       </div>
+      <InfoDialog info={update.info} onClose={update.closeInfo} />
     </div>
   );
 }

@@ -8,29 +8,6 @@ const { load: loadNotes, save: saveNotes } = require('./storage.js');
 // Releases API reports as the latest tag.
 ipcMain.on('app:version-sync', (e) => { e.returnValue = app.getVersion(); });
 
-// Results from the renderer's force-check (Help → Check for Updates…).
-// When there IS an update, the renderer shows its own banner and doesn't
-// call this — we only hear from it for "up to date" and "check failed".
-ipcMain.handle('update:show-result', async (_e, payload) => {
-  const type = payload?.type;
-  if (type === 'uptodate') {
-    dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Check for Updates',
-      message: "You're on the latest version",
-      detail: `Version ${app.getVersion()}`,
-    });
-  } else if (type === 'error') {
-    dialog.showMessageBox(mainWindow, {
-      type: 'warning',
-      title: 'Check for Updates',
-      message: "Couldn't check for updates",
-      detail: "Network error — make sure you're online.",
-    });
-  }
-  return { ok: true };
-});
-
 // Open external URLs (e.g. the release download link) in the user's default
 // browser instead of inside the Electron BrowserWindow.
 ipcMain.handle('shell:open-external', async (_e, url) => {
@@ -175,12 +152,7 @@ function buildMenu() {
       { type: 'separator' },
       {
         label: 'About',
-        click: () => dialog.showMessageBox(mainWindow, {
-          type: 'info',
-          title: 'Sticky Notes',
-          message: `Sticky Notes ${app.getVersion()}`,
-          detail: 'Spatial sticky-notes canvas.\n\nData: ~/.config/sticky-notes/notes.json\nSource: https://github.com/faridjaff/sticky-notes',
-        }),
+        click: () => mainWindow?.webContents.send('menu:about'),
       },
     ]},
   ];

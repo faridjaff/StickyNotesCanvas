@@ -925,17 +925,22 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     return selectedIds.size ? [...selectedIds] : [];
   };
 
+  // Returns true on success, false if the clipboard write failed (no user
+  // gesture, denied permission, etc.) or if there was nothing to copy. Cut
+  // depends on this so it can refuse to delete the originals when the copy
+  // half didn't actually land in the clipboard.
   const copySelected = async (noteId) => {
     const ids = resolveCopyIds(noteId);
-    if (!ids.length) return;
+    if (!ids.length) return false;
     const idSet = new Set(ids);
     // Preserve canvas (z-order) order so the human-readable text reads
     // top-to-bottom roughly as the user sees the cluster.
     const ordered = notes.filter(n => idSet.has(n.id));
     try {
       await navigator.clipboard.writeText(notesToClipboardText(ordered, links));
+      return true;
     } catch (e) {
-      // Clipboard write can fail without user gesture / permissions; silent no-op.
+      return false;
     }
   };
 
@@ -1082,6 +1087,24 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
       if (mod && e.key.toLowerCase()==='v') {
         e.preventDefault();
         pasteFromClipboard();
+        return;
+      }
+      if (mod && e.key.toLowerCase()==='x') {
+        if (selectedIds.size === 0) return;
+        e.preventDefault();
+        const ids = selectedIds;
+        // Only delete the originals if the clipboard write succeeded —
+        // otherwise the user would be left with neither a paste-able copy
+        // nor the original notes. Single snapshot covers the deletion of
+        // notes + orphan-link cleanup so Ctrl+Z reverts the whole cut.
+        (async () => {
+          const ok = await copySelected();
+          if (!ok) return;
+          takeSnapshot();
+          setNotes(ns => ns.filter(n => !ids.has(n.id)));
+          setLinks(ls => ls.filter(l => !ids.has(l.from) && !ids.has(l.to)));
+          setSelectedIds(new Set());
+        })();
         return;
       }
       if (e.key.toLowerCase()==='n') { e.preventDefault(); createNote(); }

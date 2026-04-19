@@ -3,6 +3,12 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { load: loadNotes, save: saveNotes } = require('./storage.js');
 
+// Fixes flatpak launch failure on pure-Wayland sessions (repro: Fedora 43 GNOME
+// Wayland), where Electron's default X11 ozone backend can't reach an X server.
+// 'auto' prefers Wayland when available and falls back to X11, so existing X11
+// users are unaffected. Must be set before app.whenReady(), or it's ignored.
+app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+
 // Synchronous IPC for the preload script to fetch the running app's version
 // at load time, so the renderer can compare it to whatever the GitHub
 // Releases API reports as the latest tag.

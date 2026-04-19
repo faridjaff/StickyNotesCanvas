@@ -471,7 +471,12 @@ function cmpSemver(a, b) {
 function downloadUrlForPlatform(version) {
   const p = (navigator.platform || '').toLowerCase();
   if (p.includes('linux')) {
-    return `https://github.com/faridjaff/sticky-notes/releases/download/v${version}/sticky-notes_${version}_amd64.deb`;
+    // The .deb filename matches package.json's "name" field, which became
+    // sticky-notes-canvas in v1.3.0 (renamed to align with the Snap Store
+    // identifier). Older versions used "sticky-notes" but the update check
+    // only ever targets a newer release, so this URL is always for the
+    // current naming scheme.
+    return `https://github.com/faridjaff/sticky-notes/releases/download/v${version}/sticky-notes-canvas_${version}_amd64.deb`;
   }
   // Mac (and anything else): point at the release page so the user picks
   // arm64 vs Intel themselves.

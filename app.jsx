@@ -420,11 +420,12 @@ const STICKY_CLIPBOARD_MARKER = '<!-- sticky-notes/v1 -->';
 
 function notesToClipboardText(notes, links) {
   const human = notes.map(n => (n.title || 'Untitled') + (n.body ? '\n\n' + n.body : '')).join('\n\n---\n\n');
-  // Only carry links where BOTH endpoints are inside the copied set.
-  // Otherwise pasting elsewhere would leave a dangling reference and the
-  // link badge would lie about a connection that doesn't exist anymore.
+  // Carry any link with at least one endpoint inside the copied set.
+  // Internal links (both endpoints inside) are remapped to the new ids on
+  // paste; cross-boundary links carry the outside endpoint's ORIGINAL id so
+  // paste can re-attach if that note still exists in the destination store.
   const ids = new Set(notes.map(n => n.id));
-  const subLinks = (links || []).filter(l => ids.has(l.from) && ids.has(l.to));
+  const subLinks = (links || []).filter(l => ids.has(l.from) || ids.has(l.to));
   const payload = {
     notes: notes.map(n => ({
       id: n.id,  // preserved only for in-payload link endpoint mapping; remapped on paste
@@ -1022,12 +1023,18 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     takeSnapshot();
     setNotes(ns => [...ns, ...fresh]);
 
-    // Recreate any links whose BOTH endpoints landed in this paste. Drop
-    // anything else — a half-mapped link would point at an id that doesn't
-    // exist in this app's state.
-    const freshLinks = (payload.links || [])
-      .filter(l => idMap.has(l.from) && idMap.has(l.to))
-      .map(l => ({ id: uid('l'), from: idMap.get(l.from), to: idMap.get(l.to) }));
+    // Internal links (both endpoints in the payload) remap via idMap.
+    // Cross-boundary links keep the outside endpoint's ORIGINAL id and
+    // re-attach if that note still exists in the current store; if the
+    // outside note has been deleted between cut and paste, drop the link.
+    const existingIds = new Set(notes.map(n => n.id));
+    const freshLinks = (payload.links || []).map(l => {
+      const fromIn = idMap.has(l.from), toIn = idMap.has(l.to);
+      if (fromIn && toIn) return { id: uid('l'), from: idMap.get(l.from), to: idMap.get(l.to) };
+      if (fromIn && existingIds.has(l.to)) return { id: uid('l'), from: idMap.get(l.from), to: l.to };
+      if (toIn && existingIds.has(l.from)) return { id: uid('l'), from: l.from, to: idMap.get(l.to) };
+      return null;
+    }).filter(Boolean);
     if (freshLinks.length) {
       setLinks(ls => [...ls, ...freshLinks]);
     }

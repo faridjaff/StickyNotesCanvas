@@ -476,11 +476,11 @@ function downloadUrlForPlatform(version) {
     // identifier). Older versions used "sticky-notes" but the update check
     // only ever targets a newer release, so this URL is always for the
     // current naming scheme.
-    return `https://github.com/faridjaff/sticky-notes-canvas/releases/download/v${version}/sticky-notes-canvas_${version}_amd64.deb`;
+    return `https://github.com/faridjaff/StickyNotesCanvas/releases/download/v${version}/sticky-notes-canvas_${version}_amd64.deb`;
   }
   // Mac (and anything else): point at the release page so the user picks
   // arm64 vs Intel themselves.
-  return `https://github.com/faridjaff/sticky-notes-canvas/releases/tag/v${version}`;
+  return `https://github.com/faridjaff/StickyNotesCanvas/releases/tag/v${version}`;
 }
 
 function useUpdateCheck() {
@@ -503,7 +503,7 @@ function useUpdateCheck() {
       if (Date.now() - lastCheck < ONE_DAY) return;
     }
     try {
-      const res = await fetch('https://api.github.com/repos/faridjaff/sticky-notes-canvas/releases/latest', {
+      const res = await fetch('https://api.github.com/repos/faridjaff/StickyNotesCanvas/releases/latest', {
         headers: { 'Accept': 'application/vnd.github+json' },
       });
       if (!res.ok) {
@@ -557,7 +557,7 @@ function useUpdateCheck() {
     return window.stickyAPI.onMenuAbout(() => setInfo({
       title: 'About',
       message: `Sticky Notes ${window.stickyAPI.appVersion || ''}`.trim(),
-      detail: `Spatial sticky-notes canvas.\n\nSource: https://github.com/faridjaff/sticky-notes-canvas`,
+      detail: `Spatial sticky-notes canvas.\n\nSource: https://github.com/faridjaff/StickyNotesCanvas`,
     }));
   }, []);
 
@@ -713,7 +713,7 @@ function MobileDemoBanner() {
         Web demo — full app runs natively on Linux &amp; Mac
       </span>
       <a
-        href="https://github.com/faridjaff/sticky-notes-canvas/releases"
+        href="https://github.com/faridjaff/StickyNotesCanvas/releases"
         target="_blank"
         rel="noopener noreferrer"
         style={{
@@ -3013,7 +3013,7 @@ function StatusBar({T, tweaks, folderName, noteCount, folderCount, onOpenPrefs})
       >preferences</button>
       <span style={{opacity:.4}}>·</span>
       <a
-        href="https://github.com/faridjaff/sticky-notes-canvas"
+        href="https://github.com/faridjaff/StickyNotesCanvas"
         target="_blank"
         rel="noopener noreferrer"
         style={{

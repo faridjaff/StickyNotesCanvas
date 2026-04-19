@@ -40,26 +40,26 @@
 
   <launchable type="desktop-id">io.github.faridjaff.StickyNotesCanvas.desktop</launchable>
 
-  <url type="homepage">https://github.com/faridjaff/sticky-notes-canvas</url>
-  <url type="bugtracker">https://github.com/faridjaff/sticky-notes-canvas/issues</url>
-  <url type="vcs-browser">https://github.com/faridjaff/sticky-notes-canvas</url>
+  <url type="homepage">https://github.com/faridjaff/StickyNotesCanvas</url>
+  <url type="bugtracker">https://github.com/faridjaff/StickyNotesCanvas/issues</url>
+  <url type="vcs-browser">https://github.com/faridjaff/StickyNotesCanvas</url>
 
   <screenshots>
     <screenshot type="default">
       <caption>The infinite canvas — pan, zoom, and drop notes wherever they feel right</caption>
-      <image>https://raw.githubusercontent.com/faridjaff/sticky-notes-canvas/v1.3.4/readme-assets/01-hero.png</image>
+      <image>https://raw.githubusercontent.com/faridjaff/StickyNotesCanvas/v1.3.4/readme-assets/01-hero.png</image>
     </screenshot>
     <screenshot>
       <caption>Terminal theme — for the late-night notes session</caption>
-      <image>https://raw.githubusercontent.com/faridjaff/sticky-notes-canvas/v1.3.4/readme-assets/02-terminal.png</image>
+      <image>https://raw.githubusercontent.com/faridjaff/StickyNotesCanvas/v1.3.4/readme-assets/02-terminal.png</image>
     </screenshot>
     <screenshot>
       <caption>Flat theme — quieter, for daytime work</caption>
-      <image>https://raw.githubusercontent.com/faridjaff/sticky-notes-canvas/v1.3.4/readme-assets/03-flat.png</image>
+      <image>https://raw.githubusercontent.com/faridjaff/StickyNotesCanvas/v1.3.4/readme-assets/03-flat.png</image>
     </screenshot>
     <screenshot>
       <caption>Close-up of notes with markdown bodies and a link arrow between them</caption>
-      <image>https://raw.githubusercontent.com/faridjaff/sticky-notes-canvas/v1.3.4/readme-assets/04-closeup.png</image>
+      <image>https://raw.githubusercontent.com/faridjaff/StickyNotesCanvas/v1.3.4/readme-assets/04-closeup.png</image>
     </screenshot>
   </screenshots>
 
@@ -83,6 +83,7 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.3.6" date="2026-04-19"/>
     <release version="1.3.5" date="2026-04-19"/>
     <release version="1.3.4" date="2026-04-18"/>
     <release version="1.3.3" date="2026-04-18"/>

@@ -2,7 +2,7 @@
 
 ![Sticky Notes banner](readme-assets/00-banner.png)
 
-### <a href="https://faridjaff.github.io/sticky-notes-canvas/" target="_blank" rel="noopener noreferrer">→ Try the web demo</a>
+### <a href="https://faridjaff.github.io/StickyNotesCanvas/" target="_blank" rel="noopener noreferrer">→ Try the web demo</a>
 
 # Sticky Notes
 
@@ -86,7 +86,7 @@ Easiest path on Ubuntu — install from the Snap Store, auto-updates included:
 sudo snap install sticky-notes-canvas
 ```
 
-Or grab the latest from [**Releases**](https://github.com/faridjaff/sticky-notes-canvas/releases/latest) and pick the file for your platform:
+Or grab the latest from [**Releases**](https://github.com/faridjaff/StickyNotesCanvas/releases/latest) and pick the file for your platform:
 
 | Platform | File | How to install |
 |---|---|---|
@@ -103,7 +103,7 @@ The macOS builds are not code-signed. If your Mac refuses to open the downloaded
 
 ### Web (no install)
 
-Hosted version: <https://faridjaff.github.io/sticky-notes-canvas/>. Each visitor's notes live in their own browser's `localStorage` — separate from any other browser, separate from the desktop app. Survives refresh; cleared if you wipe site data.
+Hosted version: <https://faridjaff.github.io/StickyNotesCanvas/>. Each visitor's notes live in their own browser's `localStorage` — separate from any other browser, separate from the desktop app. Survives refresh; cleared if you wipe site data.
 
 ---
 
@@ -118,7 +118,7 @@ Hosted version: <https://faridjaff.github.io/sticky-notes-canvas/>. Each visitor
 ### Clone and install
 
 ```bash
-git clone git@github.com:faridjaff/sticky-notes-canvas.git
+git clone git@github.com:faridjaff/StickyNotesCanvas.git
 cd sticky-notes-canvas
 npm install
 ```

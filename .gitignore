@@ -5,3 +5,11 @@ dist/
 
 # AI-process internal artifacts — specs, plans, ideas — don't belong in the public repo
 docs/superpowers/
+
+# Local flatpak-builder artifacts and generated sources file. The actual
+# manifest + npm sources lockfile live in the separate Flathub PR repo;
+# only the .desktop and .metainfo.xml are tracked here as upstream-owned
+# metadata.
+flatpak/.flatpak-builder/
+flatpak/build-dir/
+flatpak/generated-sources.json

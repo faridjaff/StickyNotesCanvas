@@ -829,7 +829,38 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   }, [folderNotes, query]);
 
   /* ----- actions ----- */
-  const bringToFront = (id) => { zRef.current+=1; const z=zRef.current; setNotes(ns => ns.map(n=>n.id===id?{...n,z}:n)); };
+  // Always derive the new z from the actual current max(notes.z) instead of
+  // trusting zRef alone — zRef can drift if any other code path mutates a
+  // note's z directly (e.g., group-drag promotion). Take the max of zRef+1
+  // and observed-max+1 so we're guaranteed to land above everything visible.
+  const bringToFront = (id) => {
+    setNotes(ns => {
+      const observedMax = ns.reduce((m, n) => Math.max(m, n.z || 0), 0);
+      const newZ = Math.max(zRef.current + 1, observedMax + 1);
+      zRef.current = newZ;
+      return ns.map(n => n.id === id ? {...n, z: newZ} : n);
+    });
+  };
+  // Bring an entire group to the top, preserving the relative ordering
+  // among its members (oldest stays under newest within the group). Used
+  // by the multi-note drag path so no group member ends up beneath an
+  // unselected note. Single bringToFront has the same out-of-sync guard
+  // built in, so this also stays correct under any z mutation.
+  const bringGroupToFront = (ids) => {
+    if (!ids || ids.length === 0) return;
+    const idSet = new Set(ids);
+    setNotes(ns => {
+      const inGroup = ns.filter(x => idSet.has(x.id))
+        .sort((a, b) => (a.z || 0) - (b.z || 0));
+      if (inGroup.length === 0) return ns;
+      const observedMax = ns.reduce((m, x) => Math.max(m, x.z || 0), 0);
+      const baseZ = Math.max(zRef.current, observedMax);
+      const newZ = new Map();
+      inGroup.forEach((x, i) => newZ.set(x.id, baseZ + 1 + i));
+      zRef.current = baseZ + inGroup.length;
+      return ns.map(x => newZ.has(x.id) ? {...x, z: newZ.get(x.id)} : x);
+    });
+  };
   const focusNote = (id) => { bringToFront(id); setSelectedIds(new Set([id])); };
   const updateNote = (id, patch) => setNotes(ns => ns.map(n => n.id===id ? {...n, ...patch} : n));
   const deleteNote = (id) => { takeSnapshot(); setNotes(ns => ns.filter(n => n.id!==id)); setConfirmDel(null); };
@@ -1163,7 +1194,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
         allNotes={notes}
         noteRefs={noteRefs} linkLines={linkLines}
         links={links} addLink={addLink} removeLink={removeLink} linksFor={linksFor}
-        updateNote={updateNote} bringToFront={bringToFront} focusNote={focusNote}
+        updateNote={updateNote} bringToFront={bringToFront} bringGroupToFront={bringGroupToFront} focusNote={focusNote}
         onDeleteNote={(id)=>setConfirmDel({kind:'note', id})}
         selectedIds={selectedIds}
         setSelectedIds={setSelectedIds}
@@ -1450,7 +1481,7 @@ function KeyHint({T, keys, label}) {
 /* ==================================================================== */
 function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, linkLines,
   links, addLink, removeLink, linksFor,
-  updateNote, bringToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
+  updateNote, bringToFront, bringGroupToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
   jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote, onCopyNotes,
   view, setView, drawerOpen, takeSnapshot}) {
 
@@ -1893,6 +1924,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
             selectedIds={selectedIds}
             setSelectedIds={setSelectedIds}
             setNotes={setNotes}
+            bringGroupToFront={bringGroupToFront}
             onFocus={(e)=>{
               if (e && (e.ctrlKey || e.metaKey)) {
                 setSelectedIds(prev => {
@@ -2034,6 +2066,7 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 /* STICKY NOTE                                                           */
 /* ==================================================================== */
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
+  bringGroupToFront,
   onFocus, onChange, onTogglePin, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
   allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote, onCopy}) {
   const zRef = useRef(zoom); zRef.current = zoom;
@@ -2106,19 +2139,11 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
     const isGroupDrag = !(e.ctrlKey || e.metaKey) && selected && selectedIds && selectedIds.size > 1 && typeof setNotes === 'function';
     if (isGroupDrag) {
       // Promote the entire selection to top z so no group member slides
-      // UNDER an unselected note during the drag. Preserve relative order
-      // within the group (the focused note stays topmost because onFocus
-      // already bumped it to the current max). Without this, only the
-      // focused note got bringToFront and the rest stayed at their
-      // creation-time z, which could be lower than nearby unselected notes.
-      setNotes(ns => {
-        const inGroup = ns.filter(x => selectedIds.has(x.id))
-          .sort((a, b) => (a.z||0) - (b.z||0));
-        const maxZ = ns.reduce((m, x) => Math.max(m, x.z||0), 0);
-        const newZ = new Map();
-        inGroup.forEach((x, i) => newZ.set(x.id, maxZ + 1 + i));
-        return ns.map(x => newZ.has(x.id) ? {...x, z: newZ.get(x.id)} : x);
-      });
+      // UNDER an unselected note during the drag. Centralized at App level
+      // (bringGroupToFront) so the App's zRef counter stays in sync — if
+      // we mutated z directly here, future single bringToFront calls would
+      // assign colliding z values and notes would render in undefined order.
+      bringGroupToFront && bringGroupToFront([...selectedIds]);
       const starts = new Map();
       allNotes.forEach(n => { if (selectedIds.has(n.id)) starts.set(n.id, { x: n.x, y: n.y }); });
       const move = (ev) => {

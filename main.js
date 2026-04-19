@@ -3,18 +3,6 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { load: loadNotes, save: saveNotes } = require('./storage.js');
 
-// Fixes flatpak launch failure on pure-Wayland sessions (Fedora 42+ GNOME
-// Wayland). Electron's default X11 ozone backend can't reach an X server
-// inside a flatpak sandbox that has --socket=wayland but no X11. The milder
-// `ozone-platform-hint=auto` switch was tried first but still fell through
-// to X11 in practice on Fedora/flatpak, so this forces Wayland explicitly
-// whenever the host set WAYLAND_DISPLAY. Existing X11 users have no
-// WAYLAND_DISPLAY and keep the default backend. Must run before app.whenReady.
-if (process.platform === 'linux' && process.env.WAYLAND_DISPLAY) {
-  app.commandLine.appendSwitch('enable-features', 'UseOzonePlatform');
-  app.commandLine.appendSwitch('ozone-platform', 'wayland');
-}
-
 // Synchronous IPC for the preload script to fetch the running app's version
 // at load time, so the renderer can compare it to whatever the GitHub
 // Releases API reports as the latest tag.

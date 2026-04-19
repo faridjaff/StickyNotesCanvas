@@ -1,9 +1,18 @@
 name: Release
 
 # Triggered by pushing a tag like v1.0.0, v1.0.1, v1.2.3, etc.
-# Runs builds for Linux and macOS in parallel on GitHub-hosted runners,
-# then attaches every produced artifact to the GitHub Release named
-# after the tag. The release is auto-created if it doesn't exist yet.
+#
+# Two-stage flow:
+#   1. `build` — runs on Linux + macOS in parallel. Each runner builds its
+#      platform artifacts (Linux: .deb / .AppImage / .snap; macOS: .dmg / .zip)
+#      and uploads them as workflow artifacts (NOT to the release yet). The
+#      Linux job also publishes the .snap to the Snap Store.
+#   2. `release` — depends on `build` finishing on every matrix entry. Pulls
+#      down all the workflow artifacts and attaches them to the GitHub Release
+#      in one shot. This eliminates a race the old "each runner uploads to
+#      the release as it finishes" flow had: a user whose app's update check
+#      fired between the first runner finishing and the second runner finishing
+#      would see the release exists but get a 404 on their platform's file.
 
 on:
   push:
@@ -43,8 +52,8 @@ jobs:
 
       - name: Build (electron-builder picks the host platform)
         # --publish never tells electron-builder to JUST build, not try to publish to
-        # GitHub itself. The upload step below (action-gh-release) does the publishing,
-        # which keeps the release-creation logic in one place.
+        # GitHub itself. The release job below does the publishing, which keeps the
+        # release-creation logic in one place.
         run: npx electron-builder --publish never
         env:
           # Skip code-signing on macOS so the build doesn't fail without an Apple Dev cert.
@@ -62,6 +71,9 @@ jobs:
         # SNAPCRAFT_STORE_CREDENTIALS is set in repo settings → Secrets and
         # was generated locally via:
         #   snapcraft export-login --snaps=sticky-notes-canvas --channels=stable -
+        # Snap publish happens here (not in the release job) because it doesn't
+        # affect the GitHub Release race we're fixing — snap distribution is
+        # independent of GitHub Releases.
         if: matrix.os == 'ubuntu-latest'
         uses: snapcore/action-publish@v1
         env:
@@ -70,14 +82,40 @@ jobs:
           snap: ${{ steps.snap.outputs.path }}
           release: stable
 
-      - name: Attach artifacts to the release
-        uses: softprops/action-gh-release@v2
+      - name: Upload built artifacts for the release job
+        # Stash artifacts at the workflow level so the release job can pick
+        # them up after BOTH matrix entries finish. Each matrix entry uploads
+        # to a uniquely-named bundle so they don't collide.
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: dist-${{ matrix.os }}
+          path: |
             dist/*.deb
             dist/*.AppImage
             dist/*.snap
             dist/*.dmg
             dist/*.zip
-          fail_on_unmatched_files: false   # Linux job won't have .dmg, Mac job won't have .deb/.snap — that's fine
+          if-no-files-found: ignore   # Linux won't have .dmg, Mac won't have .deb/.snap
+
+  release:
+    name: Create GitHub Release
+    needs: build           # waits for ALL matrix entries of `build` to succeed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          # No `name:` filter — pull everything the build job uploaded.
+
+      - name: Attach all artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
+            artifacts/**/*.snap
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+          fail_on_unmatched_files: false
           generate_release_notes: true

@@ -118,4 +118,7 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.zip
           fail_on_unmatched_files: false
-          generate_release_notes: true
+          # release-please writes the release notes when it creates the
+          # release on release-PR merge — don't clobber them with the
+          # raw git log.
+          generate_release_notes: false

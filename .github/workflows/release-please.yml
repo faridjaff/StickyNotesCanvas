@@ -1,0 +1,24 @@
+name: release-please
+
+# Runs on every push to master. Watches for conventional-commit messages
+# (feat:, fix:, etc.) and maintains an open "Release" PR that bumps
+# package.json's version and appends a curated section to CHANGELOG.md.
+# When that PR is merged, release-please creates the git tag and the
+# GitHub Release with its own notes, which triggers release.yml to
+# build artifacts and attach them.
+
+on:
+  push:
+    branches: [ master ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          release-type: node

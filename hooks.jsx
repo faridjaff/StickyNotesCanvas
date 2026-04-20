@@ -300,7 +300,7 @@ function useUpdateCheck() {
     return window.stickyAPI.onMenuAbout(() => setInfo({
       title: 'About',
       message: `Sticky Notes ${window.stickyAPI.appVersion || ''}`.trim(),
-      detail: `Spatial sticky-notes canvas.\n\nSource: https://github.com/faridjaff/StickyNotesCanvas`,
+      detail: `Source: https://github.com/faridjaff/StickyNotesCanvas`,
     }));
   }, []);
 

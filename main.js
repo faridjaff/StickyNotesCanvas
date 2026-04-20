@@ -122,6 +122,11 @@ function buildMenu() {
       submenu: [
         ...(isMac ? [] : [prefsItem, { type: 'separator' }]),
         {
+          label: 'Import notes from image using your AI…',
+          click: () => mainWindow?.webContents.send('menu:importHelp'),
+        },
+        { type: 'separator' },
+        {
           label: 'Export Notes…',
           accelerator: 'CmdOrCtrl+Shift+E',
           click: () => mainWindow?.webContents.send('menu:export'),

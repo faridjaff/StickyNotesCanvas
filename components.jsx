@@ -40,6 +40,33 @@ function UpdateBanner({ info, onDismiss }) {
   );
 }
 /* ==================================================================== */
+/* PASTE ERROR TOAST                                                     */
+/* ==================================================================== */
+// Transient banner shown at top of the canvas when Ctrl+V is pressed but
+// the clipboard text doesn't contain a sticky-notes payload (or contains
+// one with malformed JSON). Auto-dismisses after 5s; can be closed early
+// with the × button. Without this, paste failures were completely silent
+// — the user pressed Ctrl+V and nothing happened, with no clue why.
+function PasteErrorToast({ message, onClose }) {
+  if (!message) return null;
+  return (
+    <div style={{
+      position:'fixed', top:8, left:'50%', transform:'translateX(-50%)',
+      background:'#7c2d12', color:'#fff', padding:'8px 12px 8px 14px',
+      borderRadius:8, fontSize:13, zIndex:30000,
+      display:'flex', gap:10, alignItems:'center', maxWidth:'min(92vw, 600px)',
+      boxShadow:'0 6px 20px rgba(0,0,0,.25)',
+      fontFamily:'Inter, system-ui, sans-serif',
+    }}>
+      <span style={{flex:'1 1 auto', whiteSpace:'pre-line', lineHeight:1.45}}>{message}</span>
+      <button onClick={onClose} aria-label="Dismiss" style={{
+        background:'transparent', border:'none', color:'#fed7aa', cursor:'pointer',
+        fontSize:18, lineHeight:1, padding:'0 2px', flex:'0 0 auto',
+      }}>×</button>
+    </div>
+  );
+}
+/* ==================================================================== */
 /* INFO DIALOG                                                           */
 /* ==================================================================== */
 // In-app modal for short informational popups (Help → About, Help → Check
@@ -89,6 +116,186 @@ function InfoDialog({ info, onClose }) {
             background:'#d97757', color:'#fff', border:'none', borderRadius:6,
             padding:'8px 18px', fontSize:13, fontWeight:600, cursor:'pointer',
           }}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+/* ==================================================================== */
+/* IMPORT-FROM-IMAGE HELP DIALOG                                         */
+/* ==================================================================== */
+// Shown by Help → "Import notes from image using your AI…". Surfaces a prompt the
+// user copies into ChatGPT/Claude/Gemini along with an image of sticky
+// notes. The LLM returns text in the app's existing clipboard format and
+// the user pastes here (Ctrl+V), hitting the standard paste handler. This
+// feature is intentionally "bring your own LLM" — no network calls from
+// the app itself.
+const IMPORT_FROM_IMAGE_PROMPT = `You are given an image of sticky notes (either a photo of physical notes or a screenshot from another app).
+
+Your task: extract every visible note, then output ONE block of text matching the format below — nothing else.
+
+<format>
+The output has three sections, in order:
+
+1. Human-readable preview. Each note rendered as:
+     <title>
+
+     <body>
+   Notes separated by a line containing only: ---
+
+2. A blank line, then this literal marker on its own line:
+   <!-- sticky-notes/v1 -->
+
+3. One line of minified JSON with shape:
+   {"notes":[ ... ],"links":[ ... ]}
+
+Each note in the JSON has these fields:
+  - "id":     short string unique within the payload (e.g. "n1","n2"); used only to wire links and is remapped on paste.
+  - "title":  string. Short heading. If the note has no obvious title, infer one from its first line.
+  - "body":   string. Remaining content. Use "\\n" between lines. Markdown subset supported: # heading, ## subheading, - or * bullet lists, **bold**, *italic* or _italic_, \`inline code\`. Avoid other markdown (numbered lists, [links](url), images, fenced code blocks, tables, blockquotes) — they render as plain text.
+  - "color":  one of "red","pink","blue","green","yellow","peach","lilac","white". Pick the palette entry that best matches the sticky's paper color in the image. Default to "yellow" if unclear.
+  - "w":      integer pixel width. Use 260 by default; use ~300 for notes with wide/long lines.
+  - "h":      integer pixel height. Use 180 by default; use 220–280 for notes with lots of text.
+  - "pinned": false
+
+"links" is an empty array unless the image clearly shows arrows/lines connecting notes; if it does, add entries like {"from":"n1","to":"n2"} using the note ids you assigned above.
+</format>
+
+<example label="two plain notes">
+Groceries
+
+- eggs
+- milk
+- bread
+
+---
+
+Call mom
+
+<!-- sticky-notes/v1 -->
+{"notes":[{"id":"n1","title":"Groceries","body":"- eggs\\n- milk\\n- bread","color":"yellow","w":260,"h":200,"pinned":false},{"id":"n2","title":"Call mom","body":"","color":"pink","w":260,"h":180,"pinned":false}],"links":[]}
+</example>
+
+<example label="single note with markdown body">
+Project ideas
+
+# Q1 priorities
+
+- ship the **flatpak** release
+- write \`import-from-image\` doc
+- bump to v1.4.0 tag
+
+<!-- sticky-notes/v1 -->
+{"notes":[{"id":"n1","title":"Project ideas","body":"# Q1 priorities\\n\\n- ship the **flatpak** release\\n- write \`import-from-image\` doc\\n- bump to v1.4.0 tag","color":"blue","w":300,"h":260,"pinned":false}],"links":[]}
+</example>
+
+<rules>
+The importer is a strict JSON parser. These will cause silent rejection:
+- Single quotes anywhere in the JSON (use double quotes only).
+- Trailing commas in the JSON (e.g., \`[{...},]\` or \`{...,}\`).
+- Real newline characters inside a JSON string value (escape as \\n).
+- Wrapping the output in code fences (\`\`\`), or prefixing it with "json", or adding any language tag.
+- Preamble, explanation, or commentary before, between, or after the block.
+
+The \`<format>\`, \`<example>\`, and \`<rules>\` tags above are for your understanding only — do NOT include them in your output.
+
+Output ONLY the three-section block.
+</rules>`;
+
+function ImportFromImageDialog({ open, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const textareaRef = useRef(null);
+  const isMac = typeof navigator !== 'undefined' &&
+    /mac/i.test(navigator.platform || '');
+  const pasteShortcut = isMac ? '⌘V' : 'Ctrl+V';
+
+  useEffect(() => {
+    if (!open) return;
+    setCopied(false);
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const doCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(IMPORT_FROM_IMAGE_PROMPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard API can reject (e.g. permissions); fall back to
+      // selecting the textarea so the user can Ctrl+C manually.
+      const ta = textareaRef.current;
+      if (ta) { ta.focus(); ta.select(); }
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, background:'rgba(20,20,18,.5)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      zIndex:30000,
+    }}>
+      <div onClick={(e)=>e.stopPropagation()} style={{
+        background:'#fbf7ef', color:'#2a241a',
+        border:'1px solid #d8cfbc', borderRadius:8,
+        boxShadow:'0 10px 40px rgba(0,0,0,.25)',
+        padding:'20px 24px', width:'min(640px, 92vw)',
+        maxHeight:'86vh', display:'flex', flexDirection:'column',
+        fontFamily:'Inter, system-ui, sans-serif',
+      }}>
+        <div style={{
+          fontSize:11, fontWeight:600, color:'#7a6f5b',
+          marginBottom:8, textTransform:'uppercase', letterSpacing:.5,
+        }}>Import from image</div>
+        <div style={{fontSize:15, fontWeight:600, marginBottom:10}}>
+          Import notes from a photo or screenshot using your AI
+        </div>
+        <div style={{
+          fontSize:12, color:'#7a6f5b', lineHeight:1.45, marginBottom:12,
+        }}>
+          Paste this prompt into ChatGPT, Claude, or Gemini with your image,
+          then copy the response and {pasteShortcut} here.
+        </div>
+        <textarea
+          ref={textareaRef}
+          readOnly
+          value={IMPORT_FROM_IMAGE_PROMPT}
+          onFocus={(e) => e.target.select()}
+          style={{
+            flex:'1 1 auto', minHeight:180, maxHeight:'42vh',
+            width:'100%', resize:'vertical',
+            fontFamily:'"JetBrains Mono", ui-monospace, monospace',
+            fontSize:12, lineHeight:1.45,
+            background:'#fffdf7', color:'#2a241a',
+            border:'1px solid #d8cfbc', borderRadius:6,
+            padding:'10px 12px',
+            marginBottom:14, boxSizing:'border-box',
+          }}
+        />
+        <div style={{
+          fontSize:13, color:'#6b4a1f', lineHeight:1.5, marginBottom:14,
+          background:'#fdf3d8', border:'1px solid #ecd9a6',
+          borderRadius:6, padding:'9px 12px',
+        }}>
+          <strong>Tip:</strong> if the output looks wrong or invented, the
+          model probably isn't strong enough to read your image. Try a more
+          capable model (Claude Opus/Sonnet, GPT-4o, Gemini 2.5 Pro).
+        </div>
+        <div style={{display:'flex', justifyContent:'flex-end', gap:8}}>
+          <button onClick={onClose} style={{
+            background:'transparent', color:'#5a4a3a',
+            border:'1px solid #d8cfbc', borderRadius:6,
+            padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer',
+          }}>Close</button>
+          <button onClick={doCopy} autoFocus style={{
+            background: copied ? '#4c9e6b' : '#d97757', color:'#fff',
+            border:'none', borderRadius:6,
+            padding:'8px 18px', fontSize:13, fontWeight:600, cursor:'pointer',
+            minWidth:130,
+          }}>{copied ? 'Copied!' : 'Copy prompt'}</button>
         </div>
       </div>
     </div>
@@ -1953,4 +2160,4 @@ function StatusBar({T, tweaks, folderName, noteCount, folderCount, onOpenPrefs})
   );
 }
 
-Object.assign(window, { AppGlyph, ColorDots, ConfirmDialog, ContextMenu, Desktop, EmptyState, FolderIcon, FolderTree, FoldersDrawer, HomeIcon, InfoDialog, KeyHint, Label, Loading, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, MobileDemoBanner, Segmented, StatusBar, StickyNote, TopChrome, TweakPanel, UpdateBanner, btnS, kbdS, zBtn });
+Object.assign(window, { AppGlyph, ColorDots, ConfirmDialog, ContextMenu, Desktop, EmptyState, FolderIcon, FolderTree, FoldersDrawer, HomeIcon, IMPORT_FROM_IMAGE_PROMPT, ImportFromImageDialog, InfoDialog, KeyHint, Label, Loading, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, MobileDemoBanner, PasteErrorToast, Segmented, StatusBar, StickyNote, TopChrome, TweakPanel, UpdateBanner, btnS, kbdS, zBtn });

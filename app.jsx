@@ -6,6 +6,16 @@ const { useState, useEffect, useRef, useMemo, useCallback, Fragment } = React;
 function App() {
   const { store, setKey, exportNow, importNow, takeSnapshot, undo, redo } = useStickyStore();
   const update = useUpdateCheck();
+  // Help → "Import notes from image using your AI…". Simple modal that surfaces a
+  // copyable prompt template the user hands to an LLM along with an image;
+  // the LLM's reply is pasted here (Ctrl+V) and hits the existing paste
+  // handler. No network calls from the app itself — bring your own LLM.
+  const [importHelpOpen, setImportHelpOpen] = useState(false);
+  useEffect(() => {
+    if (!window.stickyAPI?.onMenuImportHelp) return;
+    const off = window.stickyAPI.onMenuImportHelp(() => setImportHelpOpen(true));
+    return () => off && off();
+  }, []);
   if (!store) return <Loading/>;
   return (
     <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
@@ -16,6 +26,7 @@ function App() {
           takeSnapshot={takeSnapshot} undo={undo} redo={redo} />
       </div>
       <InfoDialog info={update.info} onClose={update.closeInfo} />
+      <ImportFromImageDialog open={importHelpOpen} onClose={() => setImportHelpOpen(false)} />
     </div>
   );
 }
@@ -37,6 +48,15 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [query, setQuery] = useState('');
+  // Transient banner shown when Ctrl+V is pressed but the clipboard text
+  // doesn't parse as a sticky-notes payload. Auto-cleared by the effect
+  // below 5 seconds after it's set; manually cleared by the toast's × button.
+  const [pasteError, setPasteError] = useState(null);
+  useEffect(() => {
+    if (!pasteError) return;
+    const t = setTimeout(() => setPasteError(null), 10000);
+    return () => clearTimeout(t);
+  }, [pasteError]);
   const [confirmDel, setConfirmDel] = useState(null);
   const [renamingFolder, setRenamingFolder] = useState(null);
   const zRef = useRef(10);
@@ -243,9 +263,19 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   const pasteFromClipboard = async () => {
     let text = '';
     try { text = await navigator.clipboard.readText(); } catch { return; }
-    if (!text) return;
+    if (!text) return;  // empty clipboard — silent (no intent)
     const payload = clipboardTextToNotes(text);
-    if (!payload || !payload.notes.length) return;
+    if (!payload) {
+      // Clipboard had text, but no sticky-notes marker / invalid JSON.
+      // Most common case for this branch is an LLM that produced output in
+      // the wrong format (trailing comma, single quotes, code fences).
+      setPasteError("Couldn't import — what's on your clipboard isn't in a format this app can read.");
+      return;
+    }
+    if (!payload.notes.length) {
+      setPasteError("Nothing to import — the clipboard contained an empty notes set.");
+      return;
+    }
 
     // Random anchor near the visible canvas top-left (same strategy as
     // moveNotesToFolder). The serialised payload doesn't carry x/y, so we
@@ -432,6 +462,8 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   return (
     <div style={{height:'100%', background:T.wallpaper, color:T.panelText, position:'relative',
       fontFamily: tweaks.font+', system-ui, sans-serif'}}>
+
+      <PasteErrorToast message={pasteError} onClose={() => setPasteError(null)} />
 
       <TopChrome T={T} tweaks={tweaks}
         currentFolderName={currentFolderName}

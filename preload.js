@@ -46,4 +46,9 @@ contextBridge.exposeInMainWorld('stickyAPI', {
     ipcRenderer.on('menu:preferences', wrapped);
     return () => ipcRenderer.removeListener('menu:preferences', wrapped);
   },
+  onMenuImportHelp: (cb) => {
+    const wrapped = () => cb();
+    ipcRenderer.on('menu:importHelp', wrapped);
+    return () => ipcRenderer.removeListener('menu:importHelp', wrapped);
+  },
 });

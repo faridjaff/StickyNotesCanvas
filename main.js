@@ -145,11 +145,16 @@ function buildMenu() {
       { role: 'togglefullscreen' },
     ]},
     { role: 'help', submenu: [
-      {
-        label: 'Check for Updates…',
-        click: () => mainWindow?.webContents.send('menu:checkUpdates'),
-      },
-      { type: 'separator' },
+      // "Check for Updates…" is hidden under snap/flatpak — those channels
+      // get updates via their store (snapd, flatpak software center) and
+      // shouldn't surface a redundant in-app update button.
+      ...(process.env.SNAP_NAME || process.env.FLATPAK_ID ? [] : [
+        {
+          label: 'Check for Updates…',
+          click: () => mainWindow?.webContents.send('menu:checkUpdates'),
+        },
+        { type: 'separator' },
+      ]),
       {
         label: 'About',
         click: () => mainWindow?.webContents.send('menu:about'),

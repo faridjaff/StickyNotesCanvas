@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.4.0...v1.5.0) (2026-04-20)
+
+
+### Features
+
+* import notes from a photo via your AI ([5c5d67e](https://github.com/faridjaff/StickyNotesCanvas/commit/5c5d67eae23cf8d7b21afe25a0c87b4add52d38e))
+
 ## [1.4.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.3.6...v1.4.0) (2026-04-20)
 
 

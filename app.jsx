@@ -6,7 +6,7 @@ const { useState, useEffect, useRef, useMemo, useCallback, Fragment } = React;
 function App() {
   const { store, setKey, exportNow, importNow, takeSnapshot, undo, redo } = useStickyStore();
   const update = useUpdateCheck();
-  // Help → "Import notes from image using your AI…". Simple modal that surfaces a
+  // File → "Import notes from image using your AI…". Simple modal that surfaces a
   // copyable prompt template the user hands to an LLM along with an image;
   // the LLM's reply is pasted here (Ctrl+V) and hits the existing paste
   // handler. No network calls from the app itself — bring your own LLM.

@@ -124,7 +124,7 @@ function InfoDialog({ info, onClose }) {
 /* ==================================================================== */
 /* IMPORT-FROM-IMAGE HELP DIALOG                                         */
 /* ==================================================================== */
-// Shown by Help → "Import notes from image using your AI…". Surfaces a prompt the
+// Shown by File → "Import notes from image using your AI…". Surfaces a prompt the
 // user copies into ChatGPT/Claude/Gemini along with an image of sticky
 // notes. The LLM returns text in the app's existing clipboard format and
 // the user pastes here (Ctrl+V), hitting the standard paste handler. This

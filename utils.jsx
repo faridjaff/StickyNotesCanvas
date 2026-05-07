@@ -91,15 +91,35 @@ function mdToHtml(src) {
     return s;
   };
   for (let ln of lines) {
-    if (/^\s*#\s/.test(ln))      { if(inList){out+='</ul>';inList=false;} out += `<h3>${inline(ln.replace(/^\s*#\s/,''))}</h3>`; continue; }
-    if (/^\s*##\s/.test(ln))     { if(inList){out+='</ul>';inList=false;} out += `<h4>${inline(ln.replace(/^\s*##\s/,''))}</h4>`; continue; }
-    if (/^\s*[-*]\s/.test(ln))   { if(!inList){out+='<ul>';inList=true;} out += `<li>${inline(ln.replace(/^\s*[-*]\s/,''))}</li>`; continue; }
+    if (/^\s*#\s/.test(ln))      { if(inList){out+='</ul>';inList=false;} out += `<h3 dir="auto">${inline(ln.replace(/^\s*#\s/,''))}</h3>`; continue; }
+    if (/^\s*##\s/.test(ln))     { if(inList){out+='</ul>';inList=false;} out += `<h4 dir="auto">${inline(ln.replace(/^\s*##\s/,''))}</h4>`; continue; }
+    if (/^\s*[-*]\s/.test(ln))   { if(!inList){out+='<ul dir="auto">';inList=true;} out += `<li dir="auto">${inline(ln.replace(/^\s*[-*]\s/,''))}</li>`; continue; }
     if (ln.trim()==='')          { if(inList){out+='</ul>';inList=false;} out += ''; continue; }
     if(inList){out+='</ul>';inList=false;}
-    out += `<p>${inline(ln)}</p>`;
+    out += `<p dir="auto">${inline(ln)}</p>`;
   }
   if(inList) out+='</ul>';
   return out;
+}
+/* Returns 'rtl' if the first strong bidi character in text is RTL, else 'ltr'. */
+function firstStrongDir(text = '') {
+  for (const ch of text) {
+    const cp = ch.codePointAt(0);
+    if (
+      // Hebrew, Arabic, Syriac, Thaana, NKo, Samaritan, Mandaic, Arabic Extended-A/B
+      (cp >= 0x0590 && cp <= 0x08FF) ||
+      // Hebrew/Arabic Presentation Forms
+      (cp >= 0xFB1D && cp <= 0xFDFF) ||
+      (cp >= 0xFE70 && cp <= 0xFEFF) ||
+      // Hanifi Rohingya, Yezidi, Arabic Extended-C, Old Uyghur, Chorasmian, Elymaic
+      (cp >= 0x10D00 && cp <= 0x10FFF) ||
+      // Mende Kikakui, Adlam, Arabic Mathematical Alphabetic Symbols
+      (cp >= 0x1E800 && cp <= 0x1EFFF)
+    ) return 'rtl';
+    // Any other Unicode letter (Latin, Greek, Cyrillic, Armenian, CJK, Devanagari, Thai, …)
+    if (/\p{L}/u.test(ch)) return 'ltr';
+  }
+  return 'ltr';
 }
 /* ---------- Browser-side file helpers (used when window.stickyAPI is absent) ---------- */
 function downloadJSON(filename, obj) {

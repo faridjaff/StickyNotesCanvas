@@ -420,23 +420,23 @@ function TopChrome({T, tweaks, currentFolderName, query, setQuery, onNewNote, on
 
       <div style={{width:1, height:22, background:T.panelBorder, margin:'0 8px', display: narrow?'none':undefined}}/>
 
-      <div style={{fontSize:13, color:T.panelText, opacity:.85, fontWeight:500}}>
+      <div dir="auto" style={{fontSize:13, color:T.panelText, opacity:.85, fontWeight:500}}>
         {currentFolderName}
       </div>
 
       <div style={{flex:1}}/>
 
-      <div style={{position:'relative'}}>
-        <input id="qs"
+      <div dir={firstStrongDir(query)} style={{position:'relative'}}>
+        <input id="qs" dir="auto"
           value={query} onChange={e=>setQuery(e.target.value)}
           placeholder={isTerm?'grep…':'Search notes'}
           style={{
             width:220, height:30, borderRadius: isTerm?2:8, border:`1px solid ${T.panelBorder}`,
             background: isTerm?'#0e1319':'rgba(0,0,0,.03)', color:T.panelText,
-            padding:'0 12px 0 30px', fontSize:13, outline:'none',
+            paddingBlock:0, paddingInlineStart:30, paddingInlineEnd:12, fontSize:13, outline:'none',
             fontFamily: isTerm?T.bodyFont:'inherit',
           }}/>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{position:'absolute', left:10, top:8, opacity:.5}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{position:'absolute', insetInlineStart:10, top:8, opacity:.5}}>
           <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/>
           <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
         </svg>
@@ -548,14 +548,14 @@ function FolderTree({T, folders, notes, currentFolder, setCurrentFolder,
           ? <HomeIcon size={14} color={T.panelText}/>
           : <FolderIcon size={14} color={f.hue} fill={f.hue} open={isActive}/>}
         {(!isAll && renamingFolder===f.id) ? (
-          <input autoFocus defaultValue={f.name}
+          <input autoFocus defaultValue={f.name} dir="auto"
             onClick={e=>e.stopPropagation()}
             onBlur={e=>{ onRename(f.id, e.target.value||f.name); setRenamingFolder(null); }}
             onKeyDown={e=>{ if(e.key==='Enter'){onRename(f.id, e.target.value||f.name); setRenamingFolder(null);} if(e.key==='Escape'){setRenamingFolder(null);}}}
             style={{flex:1, background:'transparent', border:'none', outline:'none', color:T.panelText, fontSize:13, font:'inherit', fontWeight: isActive?600:500}}
           />
         ) : (
-          <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight: isActive?600:500}}>
+          <span dir="auto" style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight: isActive?600:500}}>
             {isAll ? 'All notes' : f.name}
           </span>
         )}
@@ -1399,7 +1399,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         {tweaks.hideNoteTitles ? (
           <div style={{flex:1}}/>
         ) : editingTitle ? (
-          <input autoFocus value={note.title}
+          <input autoFocus value={note.title} dir="auto"
             onChange={e=>onChange({title:e.target.value})}
             onBlur={()=>setEditingTitle(false)}
             onKeyDown={e=>{
@@ -1410,7 +1410,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             style={{flex:1, background:'transparent', border:'none', outline:'none', font:'inherit', color:'inherit', fontWeight:600, fontSize:12}}
           />
         ) : (
-          <div style={{flex:1, fontWeight:600, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+          <div dir="auto" style={{flex:1, fontWeight:600, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
             {note.title || <span style={{opacity:.4}}>Untitled</span>}
           </div>
         )}
@@ -1476,7 +1476,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           color:ink,
         }}>
         {editing ? (
-          <textarea autoFocus value={note.body}
+          <textarea autoFocus value={note.body} dir="auto"
             onChange={e=>onChange({body:e.target.value})}
             onBlur={()=>setEditing(false)}
             onKeyDown={e=>{
@@ -1487,7 +1487,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               background:'transparent', color:'inherit', font:'inherit', lineHeight:'inherit'}}
           />
         ) : (
-          <div className="md-body" dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
+          <div className="md-body" dir="auto" dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
             onClick={(e)=>{
               const a = e.target.closest('[data-link]');
               if (a) { e.preventDefault(); onLinkClick(a.dataset.link); }
@@ -1775,7 +1775,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           }}/>
           <div style={{flex:1, minWidth:0, paddingLeft:8}}>
             {renamingFolder===f.id ? (
-              <input autoFocus defaultValue={f.name}
+              <input autoFocus defaultValue={f.name} dir="auto"
                 onClick={e=>e.stopPropagation()}
                 onBlur={e=>{ onRenameFolder(f.id, e.target.value||f.name); setRenamingFolder(null); }}
                 onKeyDown={e=>{ if(e.key==='Enter'){onRenameFolder(f.id, e.target.value||f.name); setRenamingFolder(null);} if(e.key==='Escape'){setRenamingFolder(null);}}}
@@ -1783,7 +1783,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
                   color:T.panelText, fontSize:14, fontWeight:600, font:'inherit'}}
               />
             ) : (
-              <div style={{fontSize:13, fontWeight:600, color:T.panelText,
+              <div dir="auto" style={{fontSize:13, fontWeight:600, color:T.panelText,
                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
                 {f.name}
               </div>
@@ -1864,14 +1864,14 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             : <FolderIcon size={16} color={f.hue} fill={f.hue} open={isActive}/>}
           <div style={{flex:1, minWidth:0}}>
             {(!isAll && renamingFolder===f.id) ? (
-              <input autoFocus defaultValue={f.name}
+              <input autoFocus defaultValue={f.name} dir="auto"
                 onClick={e=>e.stopPropagation()}
                 onBlur={e=>{ onRenameFolder(f.id, e.target.value||f.name); setRenamingFolder(null); }}
                 onKeyDown={e=>{ if(e.key==='Enter'){onRenameFolder(f.id, e.target.value||f.name); setRenamingFolder(null);} if(e.key==='Escape'){setRenamingFolder(null);}}}
                 style={{width:'100%', background:'transparent', border:'none', outline:'none', color:T.panelText, fontSize:13, fontWeight:700, font:'inherit'}}
               />
             ) : (
-              <div style={{fontSize:13, fontWeight:700, color:T.panelText,
+              <div dir="auto" style={{fontSize:13, fontWeight:700, color:T.panelText,
                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
                 fontFamily: isTerm?T.bodyFont:'inherit'}}>
                 {isAll ? 'All notes' : f.name}

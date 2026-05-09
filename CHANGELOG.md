@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.6.1...v1.6.2) (2026-05-09)
+
+
+### Bug Fixes
+
+* bundle fonts so the font picker works offline and on flathub ([98503ac](https://github.com/faridjaff/StickyNotesCanvas/commit/98503ac3ab0372cf551c932ae85f5bcc2996419f))
+
 ## [1.6.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.6.0...v1.6.1) (2026-05-09)
 
 

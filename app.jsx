@@ -464,7 +464,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
 
   return (
     <div style={{height:'100%', background:T.wallpaper, color:T.panelText, position:'relative',
-      fontFamily: tweaks.font+', system-ui, sans-serif'}}>
+      fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif'}}>
 
       <PasteErrorToast message={pasteError} onClose={() => setPasteError(null)} />
 

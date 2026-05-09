@@ -1101,7 +1101,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
         background:T.panelBg, border:`1px solid ${T.panelBorder}`,
         borderRadius: tweaks.theme==='terminal'?2:8, padding:3,
         boxShadow:'0 2px 8px rgba(0,0,0,.08)', zIndex:500,
-        fontFamily: tweaks.font+', system-ui, sans-serif',
+        fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
       }}>
         <button onClick={()=>zoomTo(1/1.2)} title="Zoom out" style={zBtn(T)}>−</button>
         <button onClick={resetView} title="Reset view (press 0)" style={{
@@ -1119,7 +1119,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
           background:T.panelText, color:T.panelBg, padding:'6px 14px',
           borderRadius: tweaks.theme==='terminal'?2:999, fontSize:12, fontWeight:600, letterSpacing:.3,
           boxShadow:'0 4px 12px rgba(0,0,0,.2)', pointerEvents:'none', zIndex:500,
-          fontFamily: tweaks.font+', system-ui, sans-serif',
+          fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
         }}>✋ drag to pan</div>
       )}
 
@@ -1160,7 +1160,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
           background:T.accent, color: tweaks.theme==='terminal'?'#0a0c10':'#fff', padding:'7px 14px',
           borderRadius: tweaks.theme==='terminal'?2:999, fontSize:12, fontWeight:700, letterSpacing:.3,
           boxShadow:'0 4px 12px rgba(0,0,0,.2)', pointerEvents:'none', zIndex:500,
-          fontFamily: tweaks.font+', system-ui, sans-serif',
+          fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
         }}>🔗 click a note to link · esc to cancel</div>
       )}
     </div>
@@ -1917,7 +1917,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           boxShadow: isPaper
             ? 'inset 0 0 0 1px rgba(120,80,40,.12), 0 2px 0 rgba(60,40,20,.05), 0 10px 28px rgba(60,40,20,.16)'
             : '0 10px 30px rgba(0,0,0,.12)',
-          fontFamily: tweaks.font+', system-ui, sans-serif',
+          fontFamily: isTerm ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
           // SVG-noise paper grain for the paper variant
           backgroundImage: isPaper
             ? "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.03 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")"
@@ -2055,7 +2055,7 @@ function TweakPanel({T, tweaks, update, onClose}) {
       position:'fixed', right:16, bottom:44, width:280, zIndex:90000,
       background:T.panelBg, color:T.panelText, borderRadius:12,
       border:`1px solid ${T.panelBorder}`, boxShadow:'0 20px 60px rgba(0,0,0,.25)',
-      padding:14, fontFamily:'Inter, system-ui, sans-serif',
+      padding:14, fontFamily: tweaks.theme==='terminal' ? T.bodyFont : 'Inter, system-ui, sans-serif',
     }}>
       <div style={{fontWeight:700, fontSize:13, marginBottom:12, display:'flex', alignItems:'center', gap:8}}>
         <span style={{width:8, height:8, borderRadius:'50%', background:T.accent}}/>Preferences

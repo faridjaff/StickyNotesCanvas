@@ -293,17 +293,20 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     // payload can be re-attached to the new notes.
     const idMap = new Map();
     const newIds = [];
+    // Excludes white; used when payload color is missing/invalid (e.g. LLM-pasted batches).
+    const palette = NOTE_COLORS.filter(c => c.id !== 'white');
     const fresh = payload.notes.map((p, idx) => {
       const id = uid('n');
       newIds.push(id);
       if (p.id) idMap.set(p.id, id);
       zRef.current += 1;
+      const validColor = NOTE_COLORS.some(c => c.id === p.color);
       return {
         id,
         folder: targetFolder,
         title: typeof p.title === 'string' ? p.title : '',
         body:  typeof p.body  === 'string' ? p.body  : '',
-        color: p.color || 'yellow',
+        color: validColor ? p.color : palette[Math.floor(Math.random() * palette.length)].id,
         w: typeof p.w === 'number' ? p.w : 260,
         h: typeof p.h === 'number' ? p.h : 180,
         x: baseX + STEP * idx,

@@ -153,7 +153,6 @@ Each note in the JSON has these fields:
   - "id":     short string unique within the payload (e.g. "n1","n2"); used only to wire links and is remapped on paste.
   - "title":  string. Short heading. If the note has no obvious title, infer one from its first line.
   - "body":   string. Remaining content. Use "\\n" between lines. Markdown subset supported: # heading, ## subheading, - or * bullet lists, **bold**, *italic* or _italic_, \`inline code\`. Avoid other markdown (numbered lists, [links](url), images, fenced code blocks, tables, blockquotes) — they render as plain text.
-  - "color":  one of "red","pink","blue","green","yellow","peach","lilac","white". Pick the palette entry that best matches the sticky's paper color in the image. Default to "yellow" if unclear.
   - "w":      integer pixel width. Use 260 by default; use ~300 for notes with wide/long lines.
   - "h":      integer pixel height. Use 180 by default; use 220–280 for notes with lots of text.
   - "pinned": false
@@ -173,7 +172,7 @@ Groceries
 Call mom
 
 <!-- sticky-notes/v1 -->
-{"notes":[{"id":"n1","title":"Groceries","body":"- eggs\\n- milk\\n- bread","color":"yellow","w":260,"h":200,"pinned":false},{"id":"n2","title":"Call mom","body":"","color":"pink","w":260,"h":180,"pinned":false}],"links":[]}
+{"notes":[{"id":"n1","title":"Groceries","body":"- eggs\\n- milk\\n- bread","w":260,"h":200,"pinned":false},{"id":"n2","title":"Call mom","body":"","w":260,"h":180,"pinned":false}],"links":[]}
 </example>
 
 <example label="single note with markdown body">
@@ -186,7 +185,7 @@ Project ideas
 - bump to v1.4.0 tag
 
 <!-- sticky-notes/v1 -->
-{"notes":[{"id":"n1","title":"Project ideas","body":"# Q1 priorities\\n\\n- ship the **flatpak** release\\n- write \`import-from-image\` doc\\n- bump to v1.4.0 tag","color":"blue","w":300,"h":260,"pinned":false}],"links":[]}
+{"notes":[{"id":"n1","title":"Project ideas","body":"# Q1 priorities\\n\\n- ship the **flatpak** release\\n- write \`import-from-image\` doc\\n- bump to v1.4.0 tag","w":300,"h":260,"pinned":false}],"links":[]}
 </example>
 
 <rules>

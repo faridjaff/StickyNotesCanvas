@@ -277,13 +277,14 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
       return;
     }
 
-    // Random anchor near the visible canvas top-left (same strategy as
-    // moveNotesToFolder). The serialised payload doesn't carry x/y, so we
-    // just offset each pasted note by a small per-index step to avoid a
-    // perfect overlapping stack.
-    const baseX = 80 + Math.random() * 100;
-    const baseY = 80 + Math.random() * 80;
-    const STEP = 24;
+    // Anchor near the visible viewport's top-left (in screen pixels, then
+    // converted to world coords via the current pan/zoom) so pasted notes
+    // land where the user is looking instead of at world origin — which
+    // would silently appear off-screen if they've panned/zoomed away.
+    const v = store.view || { x: 0, y: 0, z: 1 };
+    const baseX = (80 + Math.random() * 100 - v.x) / v.z;
+    const baseY = (80 + Math.random() * 80  - v.y) / v.z;
+    const STEP = 24 / v.z;
 
     const targetFolder = isAll
       ? (Object.keys(folders).find(k => k!=='root') || 'root')

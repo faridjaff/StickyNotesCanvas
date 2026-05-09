@@ -6,7 +6,8 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "font": "Inter",
   "density": "cozy",
   "showLinks": true,
-  "tilt": true
+  "tilt": true,
+  "hideNoteTitles": false
 }/*EDITMODE-END*/;
 
 /* ---------- COLOR PALETTES ---------- */

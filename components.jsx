@@ -1396,7 +1396,9 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           )}
         </button>
         {folder && <span title={folder.name} style={{width:6, height:6, background:folder.hue, borderRadius:'50%', flex:'none'}}/>}
-        {editingTitle ? (
+        {tweaks.hideNoteTitles ? (
+          <div style={{flex:1}}/>
+        ) : editingTitle ? (
           <input autoFocus value={note.title}
             onChange={e=>onChange({title:e.target.value})}
             onBlur={()=>setEditingTitle(false)}
@@ -2087,6 +2089,11 @@ function TweakPanel({T, tweaks, update, onClose}) {
       <div style={{display:'flex', alignItems:'center', gap:8}}>
         <input type="checkbox" checked={tweaks.tilt !== false} onChange={e=>update({tilt:e.target.checked})}/>
         <span style={{fontSize:12}}>Tilt notes at a slight angle</span>
+      </div>
+      <Label>Note titles</Label>
+      <div style={{display:'flex', alignItems:'center', gap:8}}>
+        <input type="checkbox" checked={!!tweaks.hideNoteTitles} onChange={e=>update({hideNoteTitles:e.target.checked})}/>
+        <span style={{fontSize:12}}>Hide title on every note</span>
       </div>
     </div>
   );

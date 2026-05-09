@@ -1401,6 +1401,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             onChange={e=>onChange({title:e.target.value})}
             onBlur={()=>setEditingTitle(false)}
             onKeyDown={e=>{
+              if (e.key==='Enter' && (e.ctrlKey || e.metaKey)) { e.target.blur(); return; }
               if (e.key==='Enter')  { setEditingTitle(false); }
               if (e.key==='Escape') { onChange({title:origTitleRef.current}); setEditingTitle(false); }
             }}
@@ -1477,6 +1478,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             onChange={e=>onChange({body:e.target.value})}
             onBlur={()=>setEditing(false)}
             onKeyDown={e=>{
+              if (e.key==='Enter' && (e.ctrlKey || e.metaKey)) { e.target.blur(); return; }
               if (e.key==='Escape') { onChange({body:origBodyRef.current}); setEditing(false); }
             }}
             style={{width:'100%', height:'100%', resize:'none', border:'none', outline:'none',

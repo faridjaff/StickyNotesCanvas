@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.6.0...v1.6.1) (2026-05-09)
+
+
+### Bug Fixes
+
+* paste places notes inside the visible viewport ([bbe3c41](https://github.com/faridjaff/StickyNotesCanvas/commit/bbe3c414d847fe5017c37c44d3933212003ea2a1))
+
 ## [1.6.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.5.0...v1.6.0) (2026-05-09)
 
 

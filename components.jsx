@@ -434,7 +434,7 @@ function TopChrome({T, tweaks, currentFolderName, query, setQuery, onNewNote, on
             width:220, height:30, borderRadius: isTerm?2:8, border:`1px solid ${T.panelBorder}`,
             background: isTerm?'#0e1319':'rgba(0,0,0,.03)', color:T.panelText,
             paddingBlock:0, paddingInlineStart:30, paddingInlineEnd:12, fontSize:13, outline:'none',
-            fontFamily: isTerm?T.bodyFont:'inherit',
+            fontFamily: 'inherit',
           }}/>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{position:'absolute', insetInlineStart:10, top:8, opacity:.5}}>
           <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/>
@@ -1101,7 +1101,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
         background:T.panelBg, border:`1px solid ${T.panelBorder}`,
         borderRadius: tweaks.theme==='terminal'?2:8, padding:3,
         boxShadow:'0 2px 8px rgba(0,0,0,.08)', zIndex:500,
-        fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
+        fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
       }}>
         <button onClick={()=>zoomTo(1/1.2)} title="Zoom out" style={zBtn(T)}>−</button>
         <button onClick={resetView} title="Reset view (press 0)" style={{
@@ -1119,7 +1119,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
           background:T.panelText, color:T.panelBg, padding:'6px 14px',
           borderRadius: tweaks.theme==='terminal'?2:999, fontSize:12, fontWeight:600, letterSpacing:.3,
           boxShadow:'0 4px 12px rgba(0,0,0,.2)', pointerEvents:'none', zIndex:500,
-          fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
+          fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
         }}>✋ drag to pan</div>
       )}
 
@@ -1160,7 +1160,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
           background:T.accent, color: tweaks.theme==='terminal'?'#0a0c10':'#fff', padding:'7px 14px',
           borderRadius: tweaks.theme==='terminal'?2:999, fontSize:12, fontWeight:700, letterSpacing:.3,
           boxShadow:'0 4px 12px rgba(0,0,0,.2)', pointerEvents:'none', zIndex:500,
-          fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
+          fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
         }}>🔗 click a note to link · esc to cancel</div>
       )}
     </div>
@@ -1366,7 +1366,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           background: tweaks.theme==='terminal' ? 'rgba(0,0,0,.2)' : 'rgba(0,0,0,.05)',
           borderBottom: tweaks.theme==='terminal' ? `1px solid ${T.panelBorder}` : '1px solid rgba(0,0,0,.04)',
           cursor:'grab', userSelect:'none', flex:'none',
-          fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
+          fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
         }}>
         <button
           onPointerDown={e=>{ btnDownRef.current = {x:e.clientX, y:e.clientY}; }}
@@ -1470,7 +1470,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
       <div onDoubleClick={()=>setEditing(true)}
         style={{
           flex:1, padding:'10px 14px', overflow:'auto',
-          fontFamily: tweaks.theme==='terminal' ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
+          fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
           fontSize: tweaks.theme==='paper' ? 18 : 13.5,
           lineHeight: tweaks.theme==='paper' ? 1.35 : 1.5,
           color:ink,
@@ -1873,11 +1873,11 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             ) : (
               <div dir="auto" style={{fontSize:13, fontWeight:700, color:T.panelText,
                 overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
-                fontFamily: isTerm?T.bodyFont:'inherit'}}>
+                fontFamily: 'inherit'}}>
                 {isAll ? 'All notes' : f.name}
               </div>
             )}
-            <div style={{fontSize:11, color:T.muted, marginTop:2, fontFamily: isTerm?T.bodyFont:'inherit'}}>
+            <div style={{fontSize:11, color:T.muted, marginTop:2, fontFamily: 'inherit'}}>
               {count} {count===1?'note':'notes'}
             </div>
           </div>
@@ -1919,7 +1919,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           boxShadow: isPaper
             ? 'inset 0 0 0 1px rgba(120,80,40,.12), 0 2px 0 rgba(60,40,20,.05), 0 10px 28px rgba(60,40,20,.16)'
             : '0 10px 30px rgba(0,0,0,.12)',
-          fontFamily: isTerm ? T.bodyFont : tweaks.font+', system-ui, sans-serif',
+          fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
           // SVG-noise paper grain for the paper variant
           backgroundImage: isPaper
             ? "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2' seed='3'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.03 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>\")"
@@ -1983,7 +1983,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
               fontSize:12, fontWeight:600, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center', gap:6,
               transition:'background .12s, color .12s, transform .12s',
-              fontFamily: isTerm?T.bodyFont:'inherit',
+              fontFamily: 'inherit',
             }}
               onMouseEnter={e=>{
                 e.currentTarget.style.background = isTerm ? '#131a23'
@@ -2057,7 +2057,7 @@ function TweakPanel({T, tweaks, update, onClose}) {
       position:'fixed', right:16, bottom:44, width:280, zIndex:90000,
       background:T.panelBg, color:T.panelText, borderRadius:12,
       border:`1px solid ${T.panelBorder}`, boxShadow:'0 20px 60px rgba(0,0,0,.25)',
-      padding:14, fontFamily: tweaks.theme==='terminal' ? T.bodyFont : 'Inter, system-ui, sans-serif',
+      padding:14, fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
     }}>
       <div style={{fontWeight:700, fontSize:13, marginBottom:12, display:'flex', alignItems:'center', gap:8}}>
         <span style={{width:8, height:8, borderRadius:'50%', background:T.accent}}/>Preferences
@@ -2125,7 +2125,7 @@ function StatusBar({T, tweaks, folderName, noteCount, folderCount, onOpenPrefs})
       background:T.panelBg, borderTop:`1px solid ${T.panelBorder}`,
       display:'flex', alignItems:'center', padding:'0 14px', gap:16,
       fontSize:11, color:T.muted, zIndex:20000,
-      fontFamily: tweaks.theme==='terminal' ? T.bodyFont : 'inherit',
+      fontFamily: 'inherit',
     }}>
       <span>in: {folderName}</span>
       <span style={{opacity:.4}}>·</span>

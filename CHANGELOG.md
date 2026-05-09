@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.6.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.5.0...v1.6.0) (2026-05-09)
+
+
+### Features
+
+* add "Hide note titles" preference ([2ccfa9a](https://github.com/faridjaff/StickyNotesCanvas/commit/2ccfa9acd65742b25220ca4c1ac5a278e477c7cc))
+* random colors for AI-pasted notes ([ed5e161](https://github.com/faridjaff/StickyNotesCanvas/commit/ed5e1612c2caf537a39ce055db6e1c4cc15c4356))
+* save inline note edits with Ctrl/Cmd+Enter ([f0281d8](https://github.com/faridjaff/StickyNotesCanvas/commit/f0281d824ee87e5a5540f7d4dbc63fdb417e26b1))
+* support RTL languages via dir=auto on all user-text elements ([497567f](https://github.com/faridjaff/StickyNotesCanvas/commit/497567fe0c912fc14413cf11abb29d22b08ec252))
+
+
+### Bug Fixes
+
+* terminal theme font applies to all chrome elements ([971978b](https://github.com/faridjaff/StickyNotesCanvas/commit/971978bd88aa35463b3522c711f3a08736093bc2))
+
 ## [1.5.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.4.0...v1.5.0) (2026-04-20)
 
 

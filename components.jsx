@@ -1491,7 +1491,24 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             onBlur={()=>setEditing(false)}
             onKeyDown={e=>{
               if (e.key==='Enter' && (e.ctrlKey || e.metaKey)) { e.target.blur(); return; }
-              if (e.key==='Escape') { onChange({body:origBodyRef.current}); setEditing(false); }
+              if (e.key==='Escape') { onChange({body:origBodyRef.current}); setEditing(false); return; }
+              // Markdown list editing: Enter continues/ends a bullet, Tab /
+              // Shift+Tab indents/outdents it. The helpers return a minimal
+              // edit we apply via execCommand so the textarea's native
+              // undo/redo (and React's onChange) keep working; null means
+              // "not a list gesture" — fall through to the default behavior.
+              if (e.key==='Enter' || e.key==='Tab') {
+                const ta = e.target;
+                const edit = e.key==='Enter'
+                  ? editListOnEnter(ta.value, ta.selectionStart, ta.selectionEnd, e.shiftKey)
+                  : editListOnTab(ta.value, ta.selectionStart, ta.selectionEnd, e.shiftKey);
+                if (!edit) return;
+                e.preventDefault();
+                ta.setSelectionRange(edit.start, edit.end);
+                if (edit.text) document.execCommand('insertText', false, edit.text);
+                else document.execCommand('delete');
+                ta.setSelectionRange(edit.caret, edit.caret);
+              }
             }}
             style={{width:'100%', height:'100%', resize:'none', border:'none', outline:'none',
               background:'transparent', color:'inherit', font:'inherit', lineHeight:'inherit'}}

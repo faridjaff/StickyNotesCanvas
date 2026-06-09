@@ -80,8 +80,6 @@ const SEED = {
 /* ---------- MARKDOWN ---------- */
 function mdToHtml(src) {
   const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-  const lines = src.split('\n');
-  let out = '', inList = false;
   const inline = s => {
     s = esc(s);
     s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -90,16 +88,103 @@ function mdToHtml(src) {
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
     return s;
   };
+  const lines = src.split('\n');
+  let out = '';
+  let items = null; // buffered bullet items [{depth, html}] while inside a list
+
+  // Emit the buffered list as nested <ul>/<li>. A sub-list nests INSIDE the
+  // preceding <li> (valid HTML, not <ul> directly in <ul>). Indentation maps
+  // to depth at INDENT_UNIT (2) columns per level; a tab counts as 2 columns.
+  // A flat list (every item at depth 0) renders identically to the old output.
+  const flush = () => {
+    if (!items) return;
+    let prev = -1;       // normalized depth of the previous item
+    let liOpen = false;  // is the current <li> still awaiting its </li>?
+    for (const it of items) {
+      // Clamp so depth never jumps more than one level past the previous item.
+      const depth = prev < 0 ? 0 : Math.min(it.depth, prev + 1);
+      if (prev < 0) {
+        out += '<ul dir="auto">';
+      } else if (depth > prev) {
+        for (let k = prev; k < depth; k++) out += '<ul dir="auto">'; // nest inside the open <li>
+        liOpen = false;
+      } else if (depth < prev) {
+        if (liOpen) { out += '</li>'; liOpen = false; }
+        for (let k = prev; k > depth; k--) out += '</ul></li>';
+      } else if (liOpen) {
+        out += '</li>'; liOpen = false;
+      }
+      out += `<li dir="auto">${it.html}`;
+      liOpen = true;
+      prev = depth;
+    }
+    if (liOpen) out += '</li>';
+    for (let k = prev; k > 0; k--) out += '</ul></li>';
+    out += '</ul>';
+    items = null;
+  };
+
   for (let ln of lines) {
-    if (/^\s*#\s/.test(ln))      { if(inList){out+='</ul>';inList=false;} out += `<h3 dir="auto">${inline(ln.replace(/^\s*#\s/,''))}</h3>`; continue; }
-    if (/^\s*##\s/.test(ln))     { if(inList){out+='</ul>';inList=false;} out += `<h4 dir="auto">${inline(ln.replace(/^\s*##\s/,''))}</h4>`; continue; }
-    if (/^\s*[-*]\s/.test(ln))   { if(!inList){out+='<ul dir="auto">';inList=true;} out += `<li dir="auto">${inline(ln.replace(/^\s*[-*]\s/,''))}</li>`; continue; }
-    if (ln.trim()==='')          { if(inList){out+='</ul>';inList=false;} out += ''; continue; }
-    if(inList){out+='</ul>';inList=false;}
+    if (/^\s*#\s/.test(ln))  { flush(); out += `<h3 dir="auto">${inline(ln.replace(/^\s*#\s/,''))}</h3>`; continue; }
+    if (/^\s*##\s/.test(ln)) { flush(); out += `<h4 dir="auto">${inline(ln.replace(/^\s*##\s/,''))}</h4>`; continue; }
+    const bm = ln.match(/^(\s*)[-*]\s+(.*)$/);
+    if (bm) {
+      const depth = Math.floor(bm[1].replace(/\t/g, '  ').length / 2);
+      if (!items) items = [];
+      items.push({ depth, html: inline(bm[2]) });
+      continue;
+    }
+    if (ln.trim() === '') { flush(); continue; }
+    flush();
     out += `<p dir="auto">${inline(ln)}</p>`;
   }
-  if(inList) out+='</ul>';
+  flush();
   return out;
+}
+
+// One indent level for markdown bullet lists, in the note-body editor.
+const LIST_INDENT = '  ';
+
+// Pressing Enter inside the note body: continue / exit a markdown bullet list.
+// Pure: takes the textarea value + collapsed caret, returns a minimal edit
+// descriptor {start, end, text, caret} to apply (the handler runs it through
+// execCommand so native undo survives), or null to let the default newline fire.
+function editListOnEnter(value, selStart, selEnd, shiftKey) {
+  if (shiftKey) return null;            // Shift+Enter = plain newline escape hatch
+  if (selStart !== selEnd) return null; // a spanning selection -> default
+  const lineStart = value.lastIndexOf('\n', selStart - 1) + 1;
+  let lineEnd = value.indexOf('\n', selStart);
+  if (lineEnd === -1) lineEnd = value.length;
+  const m = value.slice(lineStart, lineEnd).match(/^(\s*)([-*])(\s+)(.*)$/);
+  if (!m) return null;                  // not a bullet line
+  const [, indent, marker, spaces, content] = m;
+  // Caret sitting in the indent/marker (not yet in the content) -> default.
+  if (selStart < lineStart + indent.length + marker.length + spaces.length) return null;
+  if (content.trim() === '') {
+    // Empty item: drop the marker (and its indent) — this ends the list.
+    return { start: lineStart, end: lineEnd, text: '', caret: lineStart };
+  }
+  // Non-empty item: open a fresh item with the same indent + marker.
+  const text = `\n${indent}${marker} `;
+  return { start: selStart, end: selStart, text, caret: selStart + text.length };
+}
+
+// Pressing Tab / Shift+Tab on a bullet line: indent / outdent one level.
+// Same pure-edit-descriptor contract as editListOnEnter; null = default Tab.
+function editListOnTab(value, selStart, selEnd, outdent) {
+  if (value.slice(selStart, selEnd).includes('\n')) return null; // multi-line selection -> default
+  const lineStart = value.lastIndexOf('\n', selStart - 1) + 1;
+  let lineEnd = value.indexOf('\n', selStart);
+  if (lineEnd === -1) lineEnd = value.length;
+  const line = value.slice(lineStart, lineEnd);
+  if (!/^(\s*)[-*]\s+/.test(line)) return null; // only bullet lines indent
+  if (!outdent) {
+    return { start: lineStart, end: lineStart, text: LIST_INDENT, caret: selStart + LIST_INDENT.length };
+  }
+  const lead = line.match(/^[ \t]*/)[0];
+  if (lead.length === 0) return null;           // nothing to outdent
+  const remove = lead[0] === '\t' ? 1 : Math.min(LIST_INDENT.length, lead.length);
+  return { start: lineStart, end: lineStart + remove, text: '', caret: Math.max(lineStart, selStart - remove) };
 }
 /* Returns 'rtl' if the first strong bidi character in text is RTL, else 'ltr'. */
 function firstStrongDir(text = '') {
@@ -276,4 +361,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, hashRot, mdToHtml, notesToClipboardText, pickJSONFile, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, editListOnEnter, editListOnTab, hashRot, mdToHtml, notesToClipboardText, pickJSONFile, themeTokens, uid, withA, withDefaults });

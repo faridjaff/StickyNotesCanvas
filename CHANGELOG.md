@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.6.2...v1.7.0) (2026-06-09)
+
+
+### Features
+
+* continue and indent markdown bullet lists in the note editor ([a34c563](https://github.com/faridjaff/StickyNotesCanvas/commit/a34c5633aaa515e894bd1722fc0c09cfd2c16f7d))
+
+
+### Bug Fixes
+
+* keep the canvas aligned after a note gets focus ([be63b94](https://github.com/faridjaff/StickyNotesCanvas/commit/be63b945f7d0071b0de471f4d9c5e1bda1be5d7d))
+
 ## [1.6.2](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.6.1...v1.6.2) (2026-05-09)
 
 

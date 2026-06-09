@@ -984,7 +984,17 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
       onWheel={onWheel}
       onMouseDown={onMouseDown}
       onTouchStart={onTouchStart}
-      style={{position:'absolute', left:0, right:0, top:54, bottom:28, overflow:'hidden', cursor, userSelect: panning?'none':'auto', touchAction: narrow?'none':undefined}}>
+      style={{position:'absolute', left:0, right:0, top:54, bottom:28,
+        // `clip`, not `hidden`: an overflow:hidden box is still a scroll
+        // container (its descendants — the 4000×4000 link layer and any
+        // far-flung notes — overflow it), so the browser will silently
+        // scroll it to reveal a focused-but-offscreen element (e.g. a note's
+        // autoFocus textarea on entering edit mode). That stray scrollTop is
+        // invisible (no scrollbar) yet shifts the whole canvas out of sync
+        // with the `view` transform, which breaks fit / pan / PageDown.
+        // `overflow:clip` is not a scroll container, so scrollTop is pinned
+        // to 0 and no focus/keyboard gesture can ever desync the canvas.
+        overflow:'clip', cursor, userSelect: panning?'none':'auto', touchAction: narrow?'none':undefined}}>
 
       {/* faint grid — lives in screen space, scales with zoom */}
       <div id="desk-grid" style={{

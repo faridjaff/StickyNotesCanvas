@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.7.0...v1.7.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* scale up the Handwritten font so it matches the others ([7305a19](https://github.com/faridjaff/StickyNotesCanvas/commit/7305a19b62b509e9eed0bd9a2ab593051a7c0926))
+
 ## [1.7.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.6.2...v1.7.0) (2026-06-09)
 
 

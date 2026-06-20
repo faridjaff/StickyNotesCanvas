@@ -38,10 +38,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -80,6 +80,8 @@ jobs:
         # affect the GitHub Release race we're fixing — snap distribution is
         # independent of GitHub Releases.
         if: matrix.os == 'ubuntu-latest'
+        # Pinned at v1 (Node 20): snapcore has no Node 24 release yet, so this is
+        # the one remaining Node-20 deprecation warning until they ship one.
         uses: snapcore/action-publish@v1
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
@@ -91,7 +93,7 @@ jobs:
         # Stash artifacts at the workflow level so the release job can pick
         # them up after BOTH matrix entries finish. Each matrix entry uploads
         # to a uniquely-named bundle so they don't collide.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: dist-${{ matrix.os }}
           path: |
@@ -108,13 +110,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
           # No `name:` filter — pull everything the build job uploaded.
 
       - name: Attach all artifacts to the release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/**/*.deb

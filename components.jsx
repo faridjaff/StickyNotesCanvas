@@ -1347,6 +1347,11 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   };
 
   const rot = tweaks.theme==='paper' && tweaks.tilt !== false ? hashRot(note.id) : 0;
+  // Caveat (the "Handwritten" font) has a much smaller x-height than the other
+  // faces, so at a shared px size it reads noticeably smaller and harder to make
+  // out. Scale note text up when it's active so it sits at a comparable visual
+  // size to Inter/Serif/Mono. (issue #8)
+  const fontScale = tweaks.font === 'Caveat' ? 1.35 : 1;
 
   return (
     <div ref={el} data-note="1" data-note-id={note.id}
@@ -1417,10 +1422,10 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               if (e.key==='Enter')  { setEditingTitle(false); }
               if (e.key==='Escape') { onChange({title:origTitleRef.current}); setEditingTitle(false); }
             }}
-            style={{flex:1, background:'transparent', border:'none', outline:'none', font:'inherit', color:'inherit', fontWeight:600, fontSize:12}}
+            style={{flex:1, background:'transparent', border:'none', outline:'none', font:'inherit', color:'inherit', fontWeight:600, fontSize:12*fontScale}}
           />
         ) : (
-          <div dir="auto" style={{flex:1, fontWeight:600, fontSize:12, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+          <div dir="auto" style={{flex:1, fontWeight:600, fontSize:12*fontScale, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
             {note.title || <span style={{opacity:.4}}>Untitled</span>}
           </div>
         )}
@@ -1481,7 +1486,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         style={{
           flex:1, padding:'10px 14px', overflow:'auto',
           fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
-          fontSize: tweaks.theme==='paper' ? 18 : 13.5,
+          fontSize: (tweaks.theme==='paper' ? 18 : 13.5) * fontScale,
           lineHeight: tweaks.theme==='paper' ? 1.35 : 1.5,
           color:ink,
         }}>

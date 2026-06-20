@@ -1,7 +1,7 @@
 {
   "name": "sticky-notes-canvas",
   "version": "1.7.0",
-  "description": "Spatial sticky-notes canvas",
+  "description": "Spatial sticky notes canvas",
   "main": "main.js",
   "private": true,
   "homepage": "https://local.sticky-notes",
@@ -50,7 +50,7 @@
       ],
       "category": "Utility",
       "icon": "build/icons",
-      "synopsis": "Spatial sticky-notes canvas",
+      "synopsis": "Spatial sticky notes canvas",
       "description": "Sticky Notes is a spatial canvas for organizing sticky notes into folders.",
       "desktop": {
         "StartupWMClass": "sticky-notes"
@@ -59,7 +59,7 @@
     "snap": {
       "grade": "stable",
       "confinement": "strict",
-      "summary": "Spatial sticky-notes canvas for Linux",
+      "summary": "Spatial sticky notes canvas for Linux",
       "category": "productivity"
     },
     "mac": {

@@ -3,7 +3,7 @@
   <id>io.github.faridjaff.StickyNotesCanvas</id>
 
   <name>Sticky Notes</name>
-  <summary>Spatial sticky-notes canvas for Linux</summary>
+  <summary>Spatial sticky notes canvas for Linux</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
@@ -27,6 +27,8 @@
       <li>Folders with colored badges, per-folder note counts, and a drawer that gets out of the way</li>
       <li>Three themes — Paper, Flat, and Terminal — for whatever mood the notes session is in</li>
       <li>Markdown bodies, link arrows between notes, color-coded folder badges</li>
+      <li>Import notes from a photo using your own AI — snap your physical sticky notes and paste them straight onto the canvas</li>
+      <li>Right-to-left language support, so notes in Arabic, Hebrew, or Persian read naturally</li>
       <li>Pinned notes that follow you into every folder</li>
       <li>Plain JSON storage you can read with cat, sync with rsync, or version with git</li>
       <li>Import and export your notes as JSON</li>
@@ -83,6 +85,7 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.7.1" date="2026-06-20"/>
     <release version="1.7.0" date="2026-06-09"/>
     <release version="1.6.2" date="2026-05-09"/>
     <release version="1.6.1" date="2026-05-09"/>

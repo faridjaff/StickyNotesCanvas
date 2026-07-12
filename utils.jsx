@@ -35,8 +35,8 @@ const SEED = {
     eng:       { id: "eng",      name: "Eng Design", parent: "root", hue: FOLDER_HUES[3] },
     home:      { id: "home",     name: "Home",       parent: "root", hue: FOLDER_HUES[0] },
     personal:  { id: "personal", name: "Personal",   parent: "root", hue: FOLDER_HUES[2] },
-    sprints:   { id: "sprints",  name: "Sprints",    parent: "root", hue: FOLDER_HUES[4] },
-    reviews:   { id: "reviews",  name: "Reviews",    parent: "root", hue: FOLDER_HUES[5] },
+    sprints:   { id: "sprints",  name: "Sprints",    parent: "workflow", hue: FOLDER_HUES[4] },
+    reviews:   { id: "reviews",  name: "Reviews",    parent: "workflow", hue: FOLDER_HUES[5] },
   },
   notes: [
     { id: "n1", folder: "home", title: "Groceries",
@@ -235,6 +235,104 @@ function pickJSONFile() {
   });
 }
 
+/* ---------- FOLDER TREE HELPERS ----------
+ * Folders form a tree through each folder's `parent` field: 'root' is the
+ * top level (it renders as "All notes" and is not a real folder row), any
+ * other value is the id of the enclosing folder. Every helper here is
+ * cycle-safe so a hand-edited or corrupt store can never hang the UI.
+ */
+
+// Repair folder parents on load: every non-root folder must point at an
+// existing folder (unknown/missing/self parents fall back to 'root'), and
+// parent cycles are broken by re-parenting the first offender to 'root'.
+// Also guarantees the 'root' entry itself exists.
+function sanitizeFolderParents(rawFolders) {
+  const folders = { ...(rawFolders || {}) };
+  if (!folders.root) folders.root = { id: 'root', name: 'All notes', parent: null, hue: '#888' };
+  for (const f of Object.values(folders)) {
+    if (f.id === 'root') continue;
+    if (!f.parent || f.parent === f.id || !folders[f.parent]) {
+      folders[f.id] = { ...f, parent: 'root' };
+    }
+  }
+  for (const f of Object.values(folders)) {
+    if (f.id === 'root') continue;
+    const seen = new Set([f.id]);
+    let cur = folders[f.id].parent;
+    while (cur && cur !== 'root') {
+      if (seen.has(cur)) { folders[f.id] = { ...folders[f.id], parent: 'root' }; break; }
+      seen.add(cur);
+      cur = folders[cur] ? folders[cur].parent : null;
+    }
+  }
+  return folders;
+}
+
+// Every folder id in the subtree rooted at `id`, including `id` itself.
+function folderSubtreeIds(folders, id) {
+  const out = new Set([id]);
+  const queue = [id];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const f of Object.values(folders)) {
+      if (f.id !== 'root' && f.parent === cur && !out.has(f.id)) {
+        out.add(f.id);
+        queue.push(f.id);
+      }
+    }
+  }
+  return out;
+}
+
+// True if folder `id` may be re-parented under `newParent` without creating
+// a cycle (a folder can't move into itself or its own subtree).
+function canMoveFolder(folders, id, newParent) {
+  if (!newParent || id === 'root' || !folders[id]) return false;
+  if (newParent !== 'root' && !folders[newParent]) return false;
+  return !folderSubtreeIds(folders, id).has(newParent);
+}
+
+// Folder names from the top level down to `id`, e.g. ['Work', 'Sprints'].
+// Used for breadcrumb display. Empty array for 'root' / unknown ids.
+function folderPath(folders, id) {
+  const names = [];
+  const seen = new Set();
+  let cur = id;
+  while (cur && cur !== 'root' && folders[cur] && !seen.has(cur)) {
+    seen.add(cur);
+    names.unshift(folders[cur].name);
+    cur = folders[cur].parent;
+  }
+  return names;
+}
+
+// DFS-flattened folder tree for list rendering: [{id, depth, hasChildren}].
+// Sibling order follows `folderOrder` (stale ids ignored), with folders not
+// yet in the order sorted after them alphabetically — the same contract the
+// flat drawer list used before nesting existed.
+function flattenFolderTree(folders, folderOrder) {
+  const rank = new Map((folderOrder || []).map((id, i) => [id, i]));
+  const childrenOf = (pid) => Object.values(folders)
+    .filter(f => f.id !== 'root' && f.parent === pid)
+    .sort((a, b) => {
+      const ra = rank.has(a.id) ? rank.get(a.id) : Infinity;
+      const rb = rank.has(b.id) ? rank.get(b.id) : Infinity;
+      if (ra !== rb) return ra - rb;
+      return a.name.localeCompare(b.name);
+    });
+  const out = [];
+  const walk = (pid, depth, seen) => {
+    for (const f of childrenOf(pid)) {
+      if (seen.has(f.id)) continue;
+      seen.add(f.id);
+      out.push({ id: f.id, depth, hasChildren: childrenOf(f.id).length > 0 });
+      walk(f.id, depth + 1, seen);
+    }
+  };
+  walk('root', 0, new Set());
+  return out;
+}
+
 /* ---------- Persisted store (Electron-aware) ---------- */
 function withDefaults(raw) {
   const src = raw || {};
@@ -248,7 +346,9 @@ function withDefaults(raw) {
     && window.innerWidth <= MOBILE_BANNER_MAX_WIDTH) ? false : true;
   return {
     tweaks:  src.tweaks  ?? TWEAK_DEFAULTS,
-    folders: src.folders ?? SEED.folders,
+    // Sanitize on every load so pre-subfolder stores (and imported backups
+    // with broken parent links) always hydrate into a valid folder tree.
+    folders: sanitizeFolderParents(src.folders ?? SEED.folders),
     notes:   src.notes   ?? SEED.notes,
     links:   src.links   ?? (SEED.links || []),
     cwd:     src.cwd     ?? 'root',
@@ -361,4 +461,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, editListOnEnter, editListOnTab, hashRot, mdToHtml, notesToClipboardText, pickJSONFile, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, mdToHtml, notesToClipboardText, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

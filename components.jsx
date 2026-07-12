@@ -612,11 +612,15 @@ function KeyHint({T, keys, label}) {
 /* ==================================================================== */
 /* DESKTOP (canvas with folder tiles + sticky notes)                     */
 /* ==================================================================== */
-function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, linkLines,
+function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNotes, noteRefs, linkLines,
   links, addLink, removeLink, linksFor,
   updateNote, bringToFront, bringGroupToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
   jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote, onCopyNotes,
   view, setView, drawerOpen, takeSnapshot}) {
+
+  // Tree-ordered folder list (with depth) for the per-note "Move to folder"
+  // submenu, so nested folders appear indented under their parents there.
+  const folderTreeRows = useMemo(() => flattenFolderTree(folders, folderOrder), [folders, folderOrder]);
 
   const [deskMenu, setDeskMenu] = useState(null);
   const [linkMenu, setLinkMenu] = useState(null);
@@ -1086,7 +1090,7 @@ function Desktop({T, tweaks, currentFolder, folders, notes, allNotes, noteRefs, 
             onTogglePin={()=>{ takeSnapshot && takeSnapshot(); updateNote(n.id, {pinned: !n.pinned}); }}
             onDelete={()=>onDeleteNote(n.id)}
             onLinkClick={jumpToNote}
-            childFolders={Object.values(folders).filter(f=>f.id!==n.folder && f.id!=='root')}
+            childFolders={folderTreeRows.filter(r=>r.id!==n.folder).map(r=>({...folders[r.id], depth:r.depth}))}
             onMoveToFolder={(fid)=>moveNoteToFolder(n.id, fid)}
             zoom={view.z}
             allNotes={allNotes}
@@ -1571,7 +1575,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             myLinks.length ? {label:`Linked notes (${myLinks.length}) ▶`, submenu: linkSubmenu} : null,
             {divider:true},
             {label:'Change color ▶', submenu: NOTE_COLORS.map(c=>({label:c.name, dot:c.paper, onClick:()=>onChange({color:c.id})}))},
-            childFolders.length ? {label:'Move to folder ▶', submenu: childFolders.map(f=>({label:f.name, dot:f.hue, onClick:()=>onMoveToFolder(f.id)}))} : null,
+            childFolders.length ? {label:'Move to folder ▶', submenu: childFolders.map(f=>({label:'  '.repeat(Math.min(f.depth||0, 5)) + f.name, dot:f.hue, onClick:()=>onMoveToFolder(f.id)}))} : null,
             {divider:true},
             {label:'Delete…', destructive:true, onClick:onDelete},
           ].filter(Boolean)}/>
@@ -1612,7 +1616,7 @@ function ContextMenu({T, x, y, items, onClose}) {
         <div key={i} style={{position:'relative'}} className="ctx-row"
           onMouseEnter={e=>e.currentTarget.classList.add('hover')}
           onMouseLeave={e=>e.currentTarget.classList.remove('hover')}>
-          <button onClick={()=>{ it.onClick?.(); if(!it.submenu) onClose(); }} style={{
+          <button onClick={()=>{ it.onClick?.(); if(!it.submenu && !it.keepOpen) onClose(); }} style={{
             width:'100%', textAlign:'left', background:'transparent', border:'none',
             padding:'7px 10px', borderRadius:4, cursor:'pointer', fontSize:13,
             color: it.destructive ? '#c33' : T.panelText,
@@ -1661,15 +1665,32 @@ function ConfirmDialog({T, title, body, onCancel, onConfirm}) {
 /* ==================================================================== */
 function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFolder,
   onCreateFolder, onRenameFolder, renamingFolder, setRenamingFolder, onDeleteFolder,
+  onMoveFolderToParent,
   onDropNoteOnFolder, onDropNotesOnFolder, onCreateNote,
   open, setOpen,
   folderOrder, setFolderOrder}) {
 
   const isTerm = tweaks.theme==='terminal';
   const isPaper = tweaks.theme==='paper';
-  const [dragOverFolderId, setDragOverFolderId] = useState(null);
-  // Right-click context menu on a folder row. Shape: {x, y, folderId} | null.
+  // Row currently hovered by a folder drag, with the drop zone the pointer
+  // is in. Shape: {id, zone: 'before'|'after'|'into'} | null.
+  const [dragOver, setDragOver] = useState(null);
+  // Right-click context menu on a folder row.
+  // Shape: {x, y, folderId, mode?: 'move'} | null.
   const [folderMenu, setFolderMenu] = useState(null);
+  // Collapsed subtrees (drawer-local UI state, not persisted). A collapsed
+  // parent hides all of its descendant rows; its own count still reflects
+  // the whole subtree.
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const toggleCollapsed = (id) => setCollapsed(c => {
+    const next = new Set(c);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const expandFolder = (id) => setCollapsed(c => {
+    if (!c.has(id)) return c;
+    const next = new Set(c); next.delete(id); return next;
+  });
 
   // Washi-tape colors for paper variant (slightly lighter/warmer than folder hues)
   const WASHI = {
@@ -1692,39 +1713,94 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
     return () => window.removeEventListener('keydown', onKey);
   }, [folderMenu]);
 
-  // Ordered folders = user-defined order first (if saved), then any brand-new
-  // folders not yet in the order appended alphabetically. Stale IDs are dropped.
-  const realFolders = useMemo(() => {
-    const allIds = Object.values(folders).filter(f => f.id !== 'root').map(f => f.id);
-    const fromOrder = (folderOrder || []).filter(id => folders[id] && id !== 'root');
-    const missing = allIds.filter(id => !fromOrder.includes(id))
-      .sort((a,b) => folders[a].name.localeCompare(folders[b].name));
-    return [...fromOrder, ...missing].map(id => folders[id]);
-  }, [folders, folderOrder]);
+  // DFS-flattened folder tree ({id, depth, hasChildren} rows). Sibling order
+  // comes from folderOrder, with folders not yet in the order appended
+  // alphabetically — the same contract the flat list used before nesting.
+  const tree = useMemo(() => flattenFolderTree(folders, folderOrder), [folders, folderOrder]);
 
-  const moveFolder = (draggedId, targetId) => {
-    if (draggedId === targetId) return;
-    const currentOrder = realFolders.map(f => f.id);
-    const sourceIdx = currentOrder.indexOf(draggedId);
-    const targetIdxOrig = currentOrder.indexOf(targetId);
-    if (sourceIdx < 0 || targetIdxOrig < 0) return;
-    const without = currentOrder.filter(id => id !== draggedId);
-    const targetIdx = without.indexOf(targetId);
-    // Dragging downward: insert AFTER the target row so a one-row drop
-    // actually moves by one. Dragging upward: insert BEFORE the target.
-    const insertAt = sourceIdx < targetIdxOrig ? targetIdx + 1 : targetIdx;
-    without.splice(insertAt, 0, draggedId);
-    setFolderOrder(without);
+  // Rows actually rendered: everything inside a collapsed subtree is hidden.
+  const visibleRows = useMemo(() => {
+    const rows = [];
+    const stack = []; // depths of collapsed ancestors currently in effect
+    for (const r of tree) {
+      while (stack.length && r.depth <= stack[stack.length - 1]) stack.pop();
+      if (stack.length) continue;
+      rows.push(r);
+      if (r.hasChildren && collapsed.has(r.id)) stack.push(r.depth);
+    }
+    return rows;
+  }, [tree, collapsed]);
+
+  // Only reserve chevron space once the tree actually nests, so flat folder
+  // lists render exactly as they did before subfolders existed.
+  const anyNesting = useMemo(() => tree.some(r => r.hasChildren), [tree]);
+
+  // Which drop zone of a row the pointer is in: the middle nests the dragged
+  // folder INTO the row's folder, the edges reorder it before/after the row.
+  const zoneOf = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const y = (e.clientY - r.top) / Math.max(1, r.height);
+    return y < 0.28 ? 'before' : y > 0.72 ? 'after' : 'into';
   };
 
-  const renderRow = (f, isAll) => {
+  // Zone-based folder drop. 'into' re-parents under the target; 'before' /
+  // 'after' makes the dragged folder a sibling of the target (re-parenting
+  // when the drag crosses tree levels) and reorders folderOrder. Drops that
+  // would move a folder into its own subtree are silently ignored.
+  const handleFolderDrop = (draggedId, targetId, zone) => {
+    if (draggedId === targetId || !folders[draggedId] || !folders[targetId]) return;
+    if (zone === 'into') {
+      expandFolder(targetId);
+      onMoveFolderToParent(draggedId, targetId);
+      return;
+    }
+    const newParent = folders[targetId].parent;
+    if (!canMoveFolder(folders, draggedId, newParent)) return;
+    if (folders[draggedId].parent !== newParent) onMoveFolderToParent(draggedId, newParent);
+    // Rewrite folderOrder from the full visual order with the dragged id
+    // spliced next to the target; sibling ordering is read back out of it.
+    const seq = tree.map(r => r.id).filter(id => id !== draggedId);
+    const at = seq.indexOf(targetId);
+    if (at < 0) return;
+    seq.splice(zone === 'after' ? at + 1 : at, 0, draggedId);
+    setFolderOrder(seq);
+  };
+
+  const renderRow = (f, isAll, depth = 0, hasChildren = false) => {
     const isActive = currentFolder===f.id;
-    const count = isAll ? notes.length : notes.filter(n=>n.folder===f.id).length;
+    // A folder's count covers its whole subtree, matching what the canvas
+    // shows when the folder is open (and what a collapsed parent contains).
+    const count = isAll ? notes.length : (() => {
+      const ids = folderSubtreeIds(folders, f.id);
+      return notes.filter(n => ids.has(n.folder)).length;
+    })();
     const swatch = isAll ? T.accent : f.hue;
     const idleBg = isTerm ? '#0e1319' : 'rgba(0,0,0,.02)';
     const hoverBg = isTerm ? '#131a23' : 'rgba(0,0,0,.05)';
 
-    const isDropTarget = dragOverFolderId === f.id;
+    // Clamp the visual indent so very deep trees stay usable in a 300px drawer.
+    const indent = Math.min(depth, 5) * 14;
+    const isCollapsed = collapsed.has(f.id);
+    const dragZone = dragOver && dragOver.id === f.id ? dragOver.zone : null;
+    const isDropTarget = dragZone === 'into';
+    // 2px accent line hugging the row's top/bottom edge while a folder drag
+    // hovers the reorder zones; nesting ('into') highlights the whole row.
+    const zoneShadow = dragZone === 'before' ? `inset 0 2px 0 ${T.accent}`
+                     : dragZone === 'after'  ? `inset 0 -2px 0 ${T.accent}` : undefined;
+
+    // Chevron for folders with subfolders; same-width spacer keeps names
+    // aligned once any nesting exists anywhere in the tree.
+    const chevronSlot = isAll ? null : (hasChildren ? (
+      <button
+        onClick={e=>{ e.stopPropagation(); toggleCollapsed(f.id); }}
+        onDoubleClick={e=>e.stopPropagation()}
+        title={isCollapsed ? 'Expand subfolders' : 'Collapse subfolders'}
+        style={{
+          width:16, height:16, flex:'none', display:'grid', placeItems:'center',
+          background:'transparent', border:'none', cursor:'pointer',
+          color:T.muted, fontSize:10, lineHeight:1, padding:0,
+        }}>{isCollapsed ? '▸' : '▾'}</button>
+    ) : (anyNesting ? <span style={{width:16, flex:'none'}}/> : null));
 
     // Context-menu handler shared across variants (skips the All-notes root row).
     const onRowContextMenu = (e) => {
@@ -1757,7 +1833,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             if (!hasNotes && !hasFolder) return;
             e.preventDefault();
             if (hasFolder) {
-              setDragOverFolderId(f.id);
+              setDragOver({ id: f.id, zone: zoneOf(e) });
             } else {
               e.currentTarget.style.outline = `1px dashed ${T.accent}`;
               e.currentTarget.style.background = withA(T.accent, .12);
@@ -1766,14 +1842,15 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           onDragLeave={e => {
             e.currentTarget.style.outline = 'none';
             e.currentTarget.style.background = isActive ? paperActiveBg : paperIdleBg;
-            if (dragOverFolderId === f.id) setDragOverFolderId(null);
+            setDragOver(d => d && d.id === f.id ? null : d);
           }}
           onDrop={e => {
             e.currentTarget.style.outline = 'none';
             e.currentTarget.style.background = isActive ? paperActiveBg : paperIdleBg;
-            setDragOverFolderId(null);
+            const zone = zoneOf(e);
+            setDragOver(null);
             const folderId = e.dataTransfer.getData('folder-id');
-            if (folderId) { moveFolder(folderId, f.id); return; }
+            if (folderId) { handleFolderDrop(folderId, f.id, zone); return; }
             const raw = e.dataTransfer.getData('note-ids');
             if (raw) {
               const ids = raw.split(',').filter(Boolean);
@@ -1786,11 +1863,12 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           onContextMenu={onRowContextMenu}
           style={{
             position:'relative', display:'flex', alignItems:'center', gap:10,
-            padding:'9px 12px 9px 18px', marginBottom:3,
+            padding:'9px 12px 9px 18px', marginBottom:3, marginLeft:indent,
             cursor: renamingFolder === f.id ? 'text' : 'grab',
             background: isDropTarget ? withA(T.accent, .18)
                       : isActive ? paperActiveBg : paperIdleBg,
             borderRadius:3,
+            boxShadow: zoneShadow,
             transition:'background .1s',
           }}
           onMouseEnter={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = paperHoverBg; }}
@@ -1805,7 +1883,8 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             boxShadow: `inset 0 0 0 0.5px ${washiColor}, 0 1px 2px rgba(0,0,0,.1)`,
             opacity: .85,
           }}/>
-          <div style={{flex:1, minWidth:0, paddingLeft:8}}>
+          {chevronSlot && <div style={{paddingLeft:8, flex:'none', display:'flex'}}>{chevronSlot}</div>}
+          <div style={{flex:1, minWidth:0, paddingLeft: chevronSlot ? 0 : 8}}>
             {renamingFolder===f.id ? (
               <input autoFocus defaultValue={f.name} dir="auto"
                 onClick={e=>e.stopPropagation()}
@@ -1846,13 +1925,20 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           e.dataTransfer.effectAllowed = 'move';
         }}
         onDragOver={e=>{
-          if (isAll) return;
           const hasNotes = e.dataTransfer.types.includes('note-ids');
           const hasFolder = e.dataTransfer.types.includes('folder-id');
+          if (isAll) {
+            // The All-notes row accepts folder drops as "move to top level" —
+            // the drag-out escape hatch for un-nesting a subfolder.
+            if (!hasFolder) return;
+            e.preventDefault();
+            setDragOver({ id: 'root', zone: 'into' });
+            return;
+          }
           if (!hasNotes && !hasFolder) return;
           e.preventDefault();
           if (hasFolder) {
-            setDragOverFolderId(f.id);
+            setDragOver({ id: f.id, zone: zoneOf(e) });
           } else {
             e.currentTarget.style.outline = `1px dashed ${T.accent}`;
             e.currentTarget.style.background = withA(T.accent, .2);
@@ -1861,14 +1947,19 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
         onDragLeave={e=>{
           e.currentTarget.style.outline='none';
           e.currentTarget.style.background = isActive ? withA(swatch,.16) : idleBg;
-          if (dragOverFolderId === f.id) setDragOverFolderId(null);
+          setDragOver(d => d && d.id === f.id ? null : d);
         }}
         onDrop={(e)=>{
           e.currentTarget.style.outline='none';
           e.currentTarget.style.background = isActive ? withA(swatch,.16) : idleBg;
-          setDragOverFolderId(null);
+          const zone = zoneOf(e);
+          setDragOver(null);
           const folderId = e.dataTransfer.getData('folder-id');
-          if (folderId && !isAll) { moveFolder(folderId, f.id); return; }
+          if (folderId) {
+            if (isAll) onMoveFolderToParent(folderId, 'root');
+            else handleFolderDrop(folderId, f.id, zone);
+            return;
+          }
           const raw = e.dataTransfer.getData('note-ids');
           if (raw && !isAll) {
             const ids = raw.split(',').filter(Boolean);
@@ -1881,9 +1972,10 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
         onContextMenu={onRowContextMenu}
         style={{
           position:'relative', display:'flex', gap:10, padding:'11px 12px', marginBottom:6,
-          borderRadius: isTerm?2:8,
+          marginLeft: indent, borderRadius: isTerm?2:8,
           background: isDropTarget ? withA(T.accent, .22) : (isActive ? withA(swatch,.16) : idleBg),
           cursor: isAll ? 'pointer' : 'grab',
+          boxShadow: zoneShadow,
           transition:'background .1s',
         }}
         onMouseEnter={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = hoverBg; }}
@@ -1891,6 +1983,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
       >
         <div style={{width:4, borderRadius:2, background:swatch, flex:'none'}}/>
         <div style={{flex:1, minWidth:0, display:'flex', alignItems:'center', gap:10}}>
+          {chevronSlot}
           {isAll
             ? <HomeIcon size={16} color={T.panelText}/>
             : <FolderIcon size={16} color={f.hue} fill={f.hue} open={isActive}/>}
@@ -1936,7 +2029,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:11, fontWeight:700, letterSpacing:1.5, boxShadow:'0 4px 14px rgba(0,0,0,.08)',
         }}>
-          <span style={{writingMode:'vertical-rl', transform:'rotate(180deg)'}}>FOLDERS · {realFolders.length}</span>
+          <span style={{writingMode:'vertical-rl', transform:'rotate(180deg)'}}>FOLDERS · {tree.length}</span>
         </button>
       )}
 
@@ -1997,18 +2090,18 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             padding: isPaper ? '2px 10px 10px' : '8px',
           }}>
             {renderRow({id:'root', name:'All notes'}, true)}
-            {!isPaper && realFolders.length>0 && (
+            {!isPaper && tree.length>0 && (
               <div style={{fontSize:10, textTransform:'uppercase', letterSpacing:1.5, opacity:.5,
                 padding:'12px 12px 6px', color:T.panelText}}>
                 Your folders
               </div>
             )}
-            {realFolders.map(f => renderRow(f, false))}
+            {visibleRows.map(r => renderRow(folders[r.id], false, r.depth, r.hasChildren))}
             {/* Faint full-width affordance to create a folder, sitting in the
                 empty space below the last folder row. The original "+ folder"
                 button in the header still works. */}
             <button onClick={()=>onCreateFolder()} title="Create folder" style={{
-              width:'100%', height:30, marginTop: realFolders.length>0 ? 4 : 12,
+              width:'100%', height:30, marginTop: tree.length>0 ? 4 : 12,
               padding:'0 10px', borderRadius: isTerm ? 2 : (isPaper ? 3 : 6),
               background:'transparent', color:T.muted,
               border: `1px dashed ${isPaper ? 'rgba(120,80,40,.28)' : T.panelBorder}`,
@@ -2033,13 +2126,43 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             </button>
           </div>
 
-          {folderMenu && (
+          {folderMenu && folderMenu.mode !== 'move' && (
             <ContextMenu T={T} x={folderMenu.x} y={folderMenu.y}
               onClose={()=>setFolderMenu(null)}
               items={[
                 {label:'Rename', onClick:()=>setRenamingFolder(folderMenu.folderId)},
+                {label:'New subfolder', onClick:()=>{ expandFolder(folderMenu.folderId); onCreateFolder(folderMenu.folderId); }},
+                // Swaps this menu for a second flat "pick the destination"
+                // menu — a hover submenu would clip against the drawer's
+                // overflow:hidden since the drawer hugs the window edge.
+                {label:'Move to…', keepOpen:true, onClick:()=>setFolderMenu(m => m && ({...m, mode:'move'}))},
+                {divider:true},
                 {label:'Delete folder', destructive:true, onClick:()=>onDeleteFolder(folderMenu.folderId)},
               ]}
+            />
+          )}
+          {folderMenu && folderMenu.mode === 'move' && (
+            <ContextMenu T={T} x={folderMenu.x} y={folderMenu.y}
+              onClose={()=>setFolderMenu(null)}
+              items={(() => {
+                const fid = folderMenu.folderId;
+                const cur = folders[fid];
+                const targets = [];
+                if (cur && cur.parent !== 'root') {
+                  targets.push({label:'Top level', onClick:()=>onMoveFolderToParent(fid, 'root')});
+                }
+                for (const r of tree) {
+                  // Skip the folder itself, its current parent (no-op move),
+                  // and anything inside its own subtree (would form a cycle).
+                  if (!cur || r.id === fid || r.id === cur.parent) continue;
+                  if (!canMoveFolder(folders, fid, r.id)) continue;
+                  targets.push({
+                    label: '  '.repeat(Math.min(r.depth, 5)) + folders[r.id].name,
+                    onClick: ()=>{ expandFolder(r.id); onMoveFolderToParent(fid, r.id); },
+                  });
+                }
+                return targets.length ? targets : [{label:'No other folder to move into'}];
+              })()}
             />
           )}
 

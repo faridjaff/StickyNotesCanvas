@@ -101,11 +101,15 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   /* ----- derived ----- */
   const isAll = currentFolder==='root';
 
-  // Notes visible on the canvas. In a specific folder, also surface any pinned
-  // note from elsewhere — pinning means "follow me across folders".
+  // Notes visible on the canvas. A folder view rolls up its whole subtree —
+  // the folder's own notes plus everything in nested subfolders — and also
+  // surfaces any pinned note from elsewhere ("follow me across folders").
+  const visibleFolderIds = useMemo(() =>
+    isAll ? null : folderSubtreeIds(folders, currentFolder),
+    [folders, currentFolder, isAll]);
   const folderNotes = useMemo(() =>
-    isAll ? notes : notes.filter(n => n.folder === currentFolder || n.pinned),
-    [notes, currentFolder, isAll]);
+    isAll ? notes : notes.filter(n => visibleFolderIds.has(n.folder) || n.pinned),
+    [notes, visibleFolderIds, isAll]);
 
   const filteredNotes = useMemo(() => {
     if (!query.trim()) return folderNotes;
@@ -171,24 +175,46 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
   const folderOrder = store.folderOrder;
   const setFolderOrder = (v) => setKey('folderOrder', v);
 
-  const createFolder = () => {
+  // With no argument (toolbar/drawer "+" buttons) the folder lands at the
+  // top level; the drawer's "New subfolder" context-menu item passes the
+  // parent folder's id. The guard also swallows the event objects that
+  // onClick handlers pass when called directly.
+  const createFolder = (parentId) => {
+    const parent = (typeof parentId === 'string' && parentId !== 'root' && folders[parentId])
+      ? parentId : 'root';
     const id = uid('f');
     const hue = FOLDER_HUES[Object.keys(folders).length % FOLDER_HUES.length];
-    setFolders(fs => ({...fs, [id]: { id, name:'New folder', parent: 'root', hue }}));
+    setFolders(fs => ({...fs, [id]: { id, name: parent==='root' ? 'New folder' : 'New subfolder', parent, hue }}));
     setFolderOrder(order => [...(order || []), id]);
     setCurrentFolder(id);
     setRenamingFolder(id);
   };
 
   const deleteFolder = (id) => {
-    // One snapshot for the folder + its notes + folderOrder removal; Ctrl+Z
-    // restores all three together.
+    // Deleting a folder removes its whole subtree: nested subfolders, every
+    // note inside any of them, and their folderOrder entries. One snapshot
+    // covers it all so a single Ctrl+Z restores everything together.
+    const doomed = folderSubtreeIds(folders, id);
     takeSnapshot();
-    setFolders(fs => { const next = {...fs}; delete next[id]; return next; });
-    setNotes(ns => ns.filter(n => n.folder !== id));
-    setFolderOrder(order => (order || []).filter(fid => fid !== id));
-    if (currentFolder===id) setCurrentFolder('root');
+    setFolders(fs => {
+      const next = {...fs};
+      for (const fid of doomed) delete next[fid];
+      return next;
+    });
+    setNotes(ns => ns.filter(n => !doomed.has(n.folder)));
+    setFolderOrder(order => (order || []).filter(fid => !doomed.has(fid)));
+    if (doomed.has(currentFolder)) setCurrentFolder('root');
     setConfirmDel(null);
+  };
+
+  // Re-parent a folder (drag into another folder's row, drop on "All notes",
+  // or the context menu's "Move to…"). canMoveFolder refuses moves into the
+  // folder's own subtree, so the tree can never acquire a cycle.
+  const moveFolderToParent = (id, parentId) => {
+    if (!canMoveFolder(folders, id, parentId)) return;
+    if (folders[id].parent === parentId) return;
+    takeSnapshot();
+    updateFolder(id, { parent: parentId });
   };
 
   const moveNoteToFolder = (noteId, folderId) => {
@@ -354,7 +380,10 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
 
   const jumpToNote = (id) => {
     const n = notes.find(x => x.id===id); if (!n) return;
-    if (currentFolder !== 'root' && n.folder !== currentFolder) setCurrentFolder(n.folder);
+    // Only switch folders when the target is genuinely out of view — a note
+    // in a nested subfolder is already visible in an ancestor's rolled-up
+    // canvas, so jumping to it shouldn't yank the user into the subfolder.
+    if (!isAll && !visibleFolderIds.has(n.folder) && !n.pinned) setCurrentFolder(n.folder);
     setTimeout(()=>focusNote(id), 50);
   };
 
@@ -461,7 +490,9 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     return () => window.removeEventListener('keydown', h);
   });
 
-  const currentFolderName = isAll ? 'All notes' : (folders[currentFolder]?.name || '');
+  // Breadcrumb path for nested folders: "Work / Sprints" instead of just
+  // "Sprints", shown in the top chrome and the status bar.
+  const currentFolderName = isAll ? 'All notes' : (folderPath(folders, currentFolder).join(' / ') || '');
 
   return (
     <div style={{height:'100%', background:T.wallpaper, color:T.panelText, position:'relative',
@@ -485,6 +516,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
         onRenameFolder={(id, name)=>updateFolder(id,{name})}
         renamingFolder={renamingFolder} setRenamingFolder={setRenamingFolder}
         onDeleteFolder={(id)=>setConfirmDel({kind:'folder', id})}
+        onMoveFolderToParent={moveFolderToParent}
         onDropNoteOnFolder={moveNoteToFolder}
         onDropNotesOnFolder={moveNotesToFolder}
         onCreateNote={createNote}
@@ -497,6 +529,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
       <Desktop T={T} tweaks={tweaks}
         currentFolder={currentFolder}
         folders={folders}
+        folderOrder={folderOrder}
         notes={filteredNotes}
         allNotes={notes}
         noteRefs={noteRefs} linkLines={linkLines}
@@ -523,7 +556,9 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
             ? `Delete "${folders[confirmDel.id]?.name}"?`
             : `Delete "${notes.find(n=>n.id===confirmDel.id)?.title || 'note'}"?`}
           body={confirmDel.kind==='folder'
-            ? 'All notes inside this folder will also be deleted.'
+            ? (folderSubtreeIds(folders, confirmDel.id).size > 1
+                ? 'All subfolders and notes inside this folder will also be deleted.'
+                : 'All notes inside this folder will also be deleted.')
             : 'This note will be permanently removed.'}
           onCancel={()=>setConfirmDel(null)}
           onConfirm={()=>{

@@ -8,7 +8,11 @@ function usePersistedState(key, initial) {
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(s)); } catch {} }, [key, s]);
   return [s, setS];
 }
-function useStickyStore() {
+// onImportRequest: optional callback fired instead of importing directly
+// when the user triggers a restore (Electron File-menu path). Restoring
+// replaces the ENTIRE store, so the app registers a confirmation dialog
+// here; without one, the old import-immediately behavior applies.
+function useStickyStore(onImportRequest) {
   const [store, setStore] = useState(null);
   const saveRef = useRef(null);
   const storeRef = useRef(null);
@@ -63,6 +67,10 @@ function useStickyStore() {
       if (current) window.stickyAPI.exportFile(current).catch(err => console.warn('[export]', err));
     };
     const onImport = async () => {
+      // Route through the app's confirmation dialog when one is registered —
+      // a restore wipes the current store, so it must not be a single silent
+      // click. The dialog's Confirm calls importNow(), which actually imports.
+      if (onImportRequest) { onImportRequest(); return; }
       try {
         const res = await window.stickyAPI.importFile();
         if (res?.ok && res.data) {
@@ -75,7 +83,7 @@ function useStickyStore() {
     const off1 = window.stickyAPI.onMenuExport(onExport);
     const off2 = window.stickyAPI.onMenuImport(onImport);
     return () => { off1 && off1(); off2 && off2(); };
-  }, [scheduleSave]);
+  }, [scheduleSave, onImportRequest]);
 
   const setKey = useCallback((key, value) => {
     setStore(prev => {

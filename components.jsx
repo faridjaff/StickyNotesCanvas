@@ -1646,7 +1646,7 @@ function ContextMenu({T, x, y, items, onClose}) {
 /* ==================================================================== */
 /* CONFIRM                                                               */
 /* ==================================================================== */
-function ConfirmDialog({T, title, body, onCancel, onConfirm}) {
+function ConfirmDialog({T, title, body, onCancel, onConfirm, confirmLabel='Delete'}) {
   return (
     <div style={{position:'fixed', inset:0, background:'rgba(10,14,20,.35)', zIndex:100000, display:'grid', placeItems:'center'}}>
       <div style={{background:T.panelBg, color:T.panelText, borderRadius:12, border:`1px solid ${T.panelBorder}`, width:400, padding:22, boxShadow:'0 20px 60px rgba(0,0,0,.3)'}}>
@@ -1654,7 +1654,7 @@ function ConfirmDialog({T, title, body, onCancel, onConfirm}) {
         <div style={{fontSize:13, color:T.muted, lineHeight:1.5}}>{body}</div>
         <div style={{display:'flex', gap:8, justifyContent:'flex-end', marginTop:18}}>
           <button onClick={onCancel} style={{padding:'8px 14px', background:'transparent', border:`1px solid ${T.panelBorder}`, borderRadius:8, fontSize:13, cursor:'pointer', color:T.panelText}}>Cancel</button>
-          <button onClick={onConfirm} style={{padding:'8px 14px', background:'#c33b3b', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer'}}>Delete</button>
+          <button onClick={onConfirm} style={{padding:'8px 14px', background:'#c33b3b', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer'}}>{confirmLabel}</button>
         </div>
       </div>
     </div>

@@ -4,7 +4,12 @@ const { useState, useEffect, useRef, useMemo, useCallback, Fragment } = React;
 /* APP                                                                  */
 /* ==================================================================== */
 function App() {
-  const { store, setKey, exportNow, importNow, takeSnapshot, undo, redo } = useStickyStore();
+  // Restoring a backup replaces the ENTIRE store, so every entry point
+  // (Backup dropdown and Electron's File menu) funnels through this confirm
+  // dialog first; only its Confirm button runs the actual import.
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const requestRestore = useCallback(() => setConfirmRestore(true), []);
+  const { store, setKey, exportNow, importNow, takeSnapshot, undo, redo } = useStickyStore(requestRestore);
   const update = useUpdateCheck();
   // File → "Import notes from image using your AI…". Simple modal that surfaces a
   // copyable prompt template the user hands to an LLM along with an image;
@@ -22,11 +27,20 @@ function App() {
       <MobileDemoBanner />
       <div style={{flex:'1 1 auto', minHeight:0, position:'relative'}}>
         {update.available && <UpdateBanner info={update.available} onDismiss={update.dismiss}/>}
-        <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={importNow}
+        <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={requestRestore}
           takeSnapshot={takeSnapshot} undo={undo} redo={redo} />
       </div>
       <InfoDialog info={update.info} onClose={update.closeInfo} />
       <ImportFromImageDialog open={importHelpOpen} onClose={() => setImportHelpOpen(false)} />
+      {confirmRestore && (
+        <ConfirmDialog T={themeTokens(store.tweaks?.theme)}
+          title="Restore backup?"
+          body="Restoring replaces ALL current notes, folders, and links with the backup file's contents. This cannot be undone with Ctrl+Z."
+          confirmLabel="Restore"
+          onCancel={()=>setConfirmRestore(false)}
+          onConfirm={()=>{ setConfirmRestore(false); importNow(); }}
+        />
+      )}
     </div>
   );
 }

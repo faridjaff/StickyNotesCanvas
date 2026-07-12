@@ -1,4 +1,4 @@
-const { useState, useEffect, useRef, useMemo, useCallback, Fragment } = React;
+const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Fragment } = React;
 
 function Loading() {
   return (
@@ -1558,7 +1558,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         }) : [{label:'(no links yet)', onClick:()=>{}}];
         const candidates = allNotes.filter(n => n.id !== note.id).slice(0, 20);
         return (
-          <ContextMenu T={T} x={menu.x-note.x} y={menu.y-note.y} onClose={()=>setMenu(null)} items={[
+          <ContextMenu T={T} x={menu.x} y={menu.y} fixed onClose={()=>setMenu(null)} items={[
             {label: (selected && selectedIds && selectedIds.size > 1)
               ? 'Copy ' + selectedIds.size + ' notes'
               : 'Copy', onClick: () => onCopy && onCopy()},
@@ -1599,16 +1599,34 @@ function ColorDots({current, onPick, ink}) {
 /* ==================================================================== */
 /* CONTEXT MENU                                                          */
 /* ==================================================================== */
-function ContextMenu({T, x, y, items, onClose}) {
+function ContextMenu({T, x, y, items, onClose, fixed}) {
   const ref = useRef(null);
   useEffect(() => {
     const h = (e) => { if (!ref.current || !ref.current.contains(e.target)) onClose(); };
     setTimeout(()=>window.addEventListener('mousedown', h), 0);
     return () => window.removeEventListener('mousedown', h);
   }, []);
-  return (
+  // `fixed` mode: render in screen space via a portal, at viewport coords
+  // (pass clientX/clientY). A note's menu can't live inside the note's DOM —
+  // the note clips it with overflow:hidden (issue #13), tilts it with the
+  // paper-theme rotation, and scales it with the canvas zoom. Portaling to
+  // document.body opts out of all three. Screen space also makes "keep the
+  // menu reachable" cheap: after mount, measure and nudge the menu back
+  // inside the viewport if it would spill past an edge.
+  const [nudge, setNudge] = useState({dx:0, dy:0});
+  useLayoutEffect(() => {
+    if (!fixed || !ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    setNudge({
+      dx: Math.min(0, window.innerWidth  - 8 - (x + r.width)),
+      dy: Math.min(0, window.innerHeight - 8 - (y + r.height)),
+    });
+  }, [fixed, x, y]);
+  const menuEl = (
     <div ref={ref} style={{
-      position:'absolute', left:x, top:y, minWidth:180, zIndex:99999,
+      position: fixed ? 'fixed' : 'absolute',
+      left: x + (fixed ? nudge.dx : 0), top: y + (fixed ? nudge.dy : 0),
+      minWidth:180, zIndex:99999,
       background:T.panelBg, border:`1px solid ${T.panelBorder}`, borderRadius:8,
       boxShadow:'0 8px 32px rgba(0,0,0,.15)', padding:4, color:T.panelText,
     }}>
@@ -1616,15 +1634,19 @@ function ContextMenu({T, x, y, items, onClose}) {
         <div key={i} style={{position:'relative'}} className="ctx-row"
           onMouseEnter={e=>e.currentTarget.classList.add('hover')}
           onMouseLeave={e=>e.currentTarget.classList.remove('hover')}>
+          {/* NB: background/display of the row button and submenu are driven by
+              the .ctx-row rules in the <style> below — they must not also be
+              set inline, or the inline value wins over the .hover rules and
+              the hover highlight / submenus can never appear. */}
           <button onClick={()=>{ it.onClick?.(); if(!it.submenu && !it.keepOpen) onClose(); }} style={{
-            width:'100%', textAlign:'left', background:'transparent', border:'none',
+            width:'100%', textAlign:'left', border:'none',
             padding:'7px 10px', borderRadius:4, cursor:'pointer', fontSize:13,
             color: it.destructive ? '#c33' : T.panelText,
           }}>{it.label}</button>
           {it.submenu && <div className="ctx-sub" style={{
             position:'absolute', left:'100%', top:-4, minWidth:160,
             background:T.panelBg, border:`1px solid ${T.panelBorder}`, borderRadius:8, padding:4,
-            boxShadow:'0 8px 32px rgba(0,0,0,.15)', display:'none',
+            boxShadow:'0 8px 32px rgba(0,0,0,.15)',
           }}>
             {it.submenu.map((s,j)=>
               <button key={j} onClick={()=>{s.onClick?.(); onClose();}} style={{
@@ -1639,9 +1661,15 @@ function ContextMenu({T, x, y, items, onClose}) {
           </div>}
         </div>
       )}
-      <style>{`.ctx-row.hover > button { background: rgba(0,0,0,.05); } .ctx-row.hover .ctx-sub { display: block; }`}</style>
+      <style>{`
+        .ctx-row > button { background: transparent; }
+        .ctx-row.hover > button { background: rgba(0,0,0,.05); }
+        .ctx-sub { display: none; }
+        .ctx-row.hover .ctx-sub { display: block; }
+      `}</style>
     </div>
   );
+  return fixed ? ReactDOM.createPortal(menuEl, document.body) : menuEl;
 }
 /* ==================================================================== */
 /* CONFIRM                                                               */

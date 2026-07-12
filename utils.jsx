@@ -82,10 +82,32 @@ function mdToHtml(src) {
   const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const inline = s => {
     s = esc(s);
-    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
-    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Pull code spans out FIRST so emphasis markers inside them stay literal
+    // (issue #12: `CONFIG_PREEMPT_RT=y` must not italicize). The \x00/\x01
+    // sentinels can't occur in note text (inputs strip control characters),
+    // so they're safe stashes.
+    const codes = [];
+    s = s.replace(/`([^`]+)`/g, (_, code) => {
+      codes.push(`<code>${code}</code>`);
+      return `\x00${codes.length - 1}\x00`;
+    });
+    // Backslash-escaped markers render literally (CommonMark), but NOT inside
+    // code spans — which is why this runs after the code stash above.
+    const escapes = [];
+    s = s.replace(/\\([*_`])/g, (_, ch) => {
+      escapes.push(ch);
+      return `\x01${escapes.length - 1}\x01`;
+    });
+    // Emphasis follows CommonMark's flanking rules, approximated: '*' works
+    // intraword but not space-padded; '_' only at word edges, so snake_case
+    // and CONFIG_PREEMPT_RT stay literal. A word edge is start/end of line,
+    // whitespace, punctuation/symbols, or a stashed code span (\x00).
+    s = s.replace(/\*\*([^\s*](?:.*?[^\s*])?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[\s\p{P}\p{S}\x00])__([^\s_](?:.*?[^\s_])?)__(?=[\s\p{P}\p{S}\x00]|$)/gu, '$1<strong>$2</strong>');
+    s = s.replace(/\*([^\s*](?:[^*]*[^\s*])?)\*/g, '<em>$1</em>');
+    s = s.replace(/(^|[\s\p{P}\p{S}\x00])_([^\s_](?:.*?[^\s_])?)_(?=[\s\p{P}\p{S}\x00]|$)/gu, '$1<em>$2</em>');
+    s = s.replace(/\x01(\d+)\x01/g, (_, i) => escapes[i]);
+    s = s.replace(/\x00(\d+)\x00/g, (_, i) => codes[i]);
     return s;
   };
   const lines = src.split('\n');

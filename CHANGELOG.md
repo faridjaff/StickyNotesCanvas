@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.8.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.7.1...v1.8.0) (2026-07-12)
+
+
+### Features
+
+* add subfolder support for organizing notes ([5d13ccd](https://github.com/faridjaff/StickyNotesCanvas/commit/5d13ccd5ee6395396cd50dad32a4330c36b2751d)), closes [#14](https://github.com/faridjaff/StickyNotesCanvas/issues/14)
+* support web links in notes with paste-to-link editing ([28c1797](https://github.com/faridjaff/StickyNotesCanvas/commit/28c1797c0412ccdf62e843d82b21d775927f86fb))
+
+
+### Bug Fixes
+
+* add bottom-bar drag handle so notes stay movable when the header is off-screen ([b451ac1](https://github.com/faridjaff/StickyNotesCanvas/commit/b451ac171350e0691bc848b011b30e4a79c45c82)), closes [#16](https://github.com/faridjaff/StickyNotesCanvas/issues/16)
+* let note context menus extend past the note borders ([6abf72e](https://github.com/faridjaff/StickyNotesCanvas/commit/6abf72e3f915a4687b53e05c687da861e79ace7a)), closes [#13](https://github.com/faridjaff/StickyNotesCanvas/issues/13)
+* make markdown emphasis respect code spans and word boundaries ([5ef9cfe](https://github.com/faridjaff/StickyNotesCanvas/commit/5ef9cfeef9a6324a6b9d8729a1528cbfac8e56b6)), closes [#12](https://github.com/faridjaff/StickyNotesCanvas/issues/12)
+* warn before a backup restore replaces all existing data ([935ac0c](https://github.com/faridjaff/StickyNotesCanvas/commit/935ac0ce00e4d3a5863174d42ab07cebdd3d019c)), closes [#22](https://github.com/faridjaff/StickyNotesCanvas/issues/22)
+
 ## [1.7.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.7.0...v1.7.1) (2026-06-20)
 
 

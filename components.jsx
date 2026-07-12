@@ -1498,6 +1498,20 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           <textarea autoFocus value={note.body} dir="auto"
             onChange={e=>onChange({body:e.target.value})}
             onBlur={()=>setEditing(false)}
+            onPaste={e=>{
+              // Slack-style: pasting a URL over selected text wraps the
+              // selection as [selection](url). Same execCommand contract as
+              // the Enter/Tab list edits below (native undo + React onChange
+              // keep working); null means "not a link paste" — fall through
+              // to the default paste.
+              const ta = e.target;
+              const edit = editLinkOnPaste(ta.value, ta.selectionStart, ta.selectionEnd,
+                e.clipboardData ? e.clipboardData.getData('text/plain') : '');
+              if (!edit) return;
+              e.preventDefault();
+              ta.setSelectionRange(edit.start, edit.end);
+              document.execCommand('insertText', false, edit.text);
+            }}
             onKeyDown={e=>{
               if (e.key==='Enter' && (e.ctrlKey || e.metaKey)) { e.target.blur(); return; }
               if (e.key==='Escape') { onChange({body:origBodyRef.current}); setEditing(false); return; }
@@ -1525,6 +1539,8 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         ) : (
           <div className="md-body" dir="auto" dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
             onClick={(e)=>{
+              const w = e.target.closest('[data-weblink]');
+              if (w) { e.preventDefault(); openWebLink(w.dataset.weblink); return; }
               const a = e.target.closest('[data-link]');
               if (a) { e.preventDefault(); onLinkClick(a.dataset.link); }
             }}

@@ -142,3 +142,70 @@ test('code spans, intraword underscores, and real emphasis coexist', () => {
   assert.equal(mdToHtml('compare `a_b` with c_d and _real_'),
     '<p dir="auto">compare <code>a_b</code> with c_d and <em>real</em></p>');
 });
+
+/* ---------------- web links ---------------- */
+
+test('[text](url) renders an anchor with data-weblink', () => {
+  assert.equal(mdToHtml('[docs](https://example.com/guide)'),
+    '<p dir="auto"><a href="https://example.com/guide" data-weblink="https://example.com/guide">docs</a></p>');
+});
+
+test('emphasis inside link text still renders', () => {
+  assert.equal(mdToHtml('[_word_](https://x.y)'),
+    '<p dir="auto"><a href="https://x.y" data-weblink="https://x.y"><em>word</em></a></p>');
+});
+
+test('underscores in a link URL are never italicized', () => {
+  assert.equal(mdToHtml('[k](https://x.y/a_b_c)'),
+    '<p dir="auto"><a href="https://x.y/a_b_c" data-weblink="https://x.y/a_b_c">k</a></p>');
+});
+
+test('bare URLs auto-link with the URL as text', () => {
+  assert.equal(mdToHtml('see https://x.y/p'),
+    '<p dir="auto">see <a href="https://x.y/p" data-weblink="https://x.y/p">https://x.y/p</a></p>');
+});
+
+test('trailing punctuation stays outside a bare link', () => {
+  assert.equal(mdToHtml('go to https://x.y/p.'),
+    '<p dir="auto">go to <a href="https://x.y/p" data-weblink="https://x.y/p">https://x.y/p</a>.</p>');
+});
+
+test('balanced parens stay inside a bare URL, wrapping paren stays out', () => {
+  assert.equal(mdToHtml('(https://en.wikipedia.org/wiki/Foo_(bar))'),
+    '<p dir="auto">(<a href="https://en.wikipedia.org/wiki/Foo_(bar)" data-weblink="https://en.wikipedia.org/wiki/Foo_(bar)">https://en.wikipedia.org/wiki/Foo_(bar)</a>)</p>');
+});
+
+test('query-string ampersands survive escaping in href and text', () => {
+  assert.equal(mdToHtml('https://x.y?a=1&b=2'),
+    '<p dir="auto"><a href="https://x.y?a=1&amp;b=2" data-weblink="https://x.y?a=1&amp;b=2">https://x.y?a=1&amp;b=2</a></p>');
+});
+
+test('javascript: URLs never become links', () => {
+  assert.equal(mdToHtml('[x](javascript:alert(1))'),
+    '<p dir="auto">[x](javascript:alert(1))</p>');
+});
+
+test('a double quote in a link URL is attribute-escaped', () => {
+  assert.equal(mdToHtml('[x](https://x.y/a"b)'),
+    '<p dir="auto"><a href="https://x.y/a&quot;b" data-weblink="https://x.y/a&quot;b">x</a></p>');
+});
+
+test('link syntax inside a code span stays literal', () => {
+  assert.equal(mdToHtml('`[x](https://x.y)`'),
+    '<p dir="auto"><code>[x](https://x.y)</code></p>');
+});
+
+test('image syntax stays fully literal (unsupported)', () => {
+  assert.equal(mdToHtml('![alt](https://x.y/i.png)'),
+    '<p dir="auto">![alt](https://x.y/i.png)</p>');
+});
+
+test('two links on one line both render', () => {
+  assert.equal(mdToHtml('[a](https://x.a) and [b](https://x.b)'),
+    '<p dir="auto"><a href="https://x.a" data-weblink="https://x.a">a</a> and <a href="https://x.b" data-weblink="https://x.b">b</a></p>');
+});
+
+test('a bare URL inside emphasis stays a working link', () => {
+  assert.equal(mdToHtml('_see https://x.y_'),
+    '<p dir="auto"><em>see <a href="https://x.y" data-weblink="https://x.y">https://x.y</a></em></p>');
+});

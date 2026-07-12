@@ -98,14 +98,40 @@ function mdToHtml(src) {
       escapes.push(ch);
       return `\x01${escapes.length - 1}\x01`;
     });
+    // Web links, http(s)-only by construction so javascript:/file:/data:
+    // URLs can never become clickable. URLs are stashed like code spans
+    // (their underscores must stay literal); link TEXT stays in the stream
+    // between \x02/\x03 markers so emphasis inside it still renders.
+    // data-weblink is what the note-body click delegate dispatches on.
+    const attr = u => u.replace(/"/g, '&quot;');
+    const links = [];
+    // [text](url) — a leading ! is unsupported image syntax: stash the whole
+    // match verbatim so it renders exactly as typed.
+    s = s.replace(/(!?)\[([^\]]+)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/gi, (m, bang, text, url) => {
+      if (bang) { codes.push(m); return `\x00${codes.length - 1}\x00`; }
+      links.push(`<a href="${attr(url)}" data-weblink="${attr(url)}">`);
+      return `\x02${links.length - 1}\x02${text}\x03`;
+    });
+    // Bare URLs auto-link (URL as text). One balanced (...) group may belong
+    // to the URL (Wikipedia); trailing punctuation stays outside the link.
+    // The &lt;/&gt; lookaheads stop at what was a real < or > before esc().
+    s = s.replace(/(^|[\s(])(https?:\/\/(?:(?!&lt;|&gt;)[^\s()"])+(?:\((?:(?!&lt;|&gt;)[^\s()"])*\))?(?:(?!&lt;|&gt;)[^\s()"])*)/gi, (m, pre, url) => {
+      const trail = (url.match(/[.,;:!?_*~]+$/) || [''])[0];
+      if (trail) url = url.slice(0, -trail.length);
+      if (!/^https?:\/\/./i.test(url)) return m;
+      codes.push(`<a href="${attr(url)}" data-weblink="${attr(url)}">${url}</a>`);
+      return `${pre}\x00${codes.length - 1}\x00${trail}`;
+    });
     // Emphasis follows CommonMark's flanking rules, approximated: '*' works
     // intraword but not space-padded; '_' only at word edges, so snake_case
     // and CONFIG_PREEMPT_RT stay literal. A word edge is start/end of line,
-    // whitespace, punctuation/symbols, or a stashed code span (\x00).
+    // whitespace, punctuation/symbols, or a stashed span (\x00-\x03).
     s = s.replace(/\*\*([^\s*](?:.*?[^\s*])?)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/(^|[\s\p{P}\p{S}\x00])__([^\s_](?:.*?[^\s_])?)__(?=[\s\p{P}\p{S}\x00]|$)/gu, '$1<strong>$2</strong>');
+    s = s.replace(/(^|[\s\p{P}\p{S}\x00-\x03])__([^\s_](?:.*?[^\s_])?)__(?=[\s\p{P}\p{S}\x00-\x03]|$)/gu, '$1<strong>$2</strong>');
     s = s.replace(/\*([^\s*](?:[^*]*[^\s*])?)\*/g, '<em>$1</em>');
-    s = s.replace(/(^|[\s\p{P}\p{S}\x00])_([^\s_](?:.*?[^\s_])?)_(?=[\s\p{P}\p{S}\x00]|$)/gu, '$1<em>$2</em>');
+    s = s.replace(/(^|[\s\p{P}\p{S}\x00-\x03])_([^\s_](?:.*?[^\s_])?)_(?=[\s\p{P}\p{S}\x00-\x03]|$)/gu, '$1<em>$2</em>');
+    s = s.replace(/\x02(\d+)\x02/g, (_, i) => links[i]);
+    s = s.replace(/\x03/g, '</a>');
     s = s.replace(/\x01(\d+)\x01/g, (_, i) => escapes[i]);
     s = s.replace(/\x00(\d+)\x00/g, (_, i) => codes[i]);
     return s;
@@ -207,6 +233,33 @@ function editListOnTab(value, selStart, selEnd, outdent) {
   if (lead.length === 0) return null;           // nothing to outdent
   const remove = lead[0] === '\t' ? 1 : Math.min(LIST_INDENT.length, lead.length);
   return { start: lineStart, end: lineStart + remove, text: '', caret: Math.max(lineStart, selStart - remove) };
+}
+// Pasting over a selection in the note body: if the clipboard is a single
+// http(s) URL, wrap the selection Slack-style as [selection](url) — or, when
+// the selection is exactly one [word](url) link already, swap in the new URL
+// and keep the word. Same pure edit-descriptor contract as editListOnEnter;
+// null means "not a link paste" — let the browser's default paste run.
+// Wrapping never fires when it would emit broken markdown (selection with
+// brackets or newlines) or fight an obvious intent (selection is a URL).
+function editLinkOnPaste(value, selStart, selEnd, pasted) {
+  if (selStart === selEnd) return null;
+  const url = (pasted || '').trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return null;
+  const sel = value.slice(selStart, selEnd);
+  const link = sel.match(/^\[([^\]]+)\]\(https?:\/\/[^\s)]+\)$/i);
+  let text;
+  if (link) text = `[${link[1]}](${url})`;
+  else if (/^https?:\/\//i.test(sel.trim()) || /[\n\[\]]/.test(sel)) return null;
+  else text = `[${sel}](${url})`;
+  return { start: selStart, end: selEnd, text, caret: selStart + text.length };
+}
+
+// Open a note's web link outside the app: default browser under Electron
+// (http/https re-checked in the main process), new tab in the web demo.
+function openWebLink(url) {
+  if (!/^https?:\/\//i.test(url)) return;
+  if (window.stickyAPI && window.stickyAPI.openExternal) window.stickyAPI.openExternal(url);
+  else window.open(url, '_blank', 'noopener,noreferrer');
 }
 /* Returns 'rtl' if the first strong bidi character in text is RTL, else 'ltr'. */
 function firstStrongDir(text = '') {
@@ -483,4 +536,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, mdToHtml, notesToClipboardText, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, mdToHtml, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

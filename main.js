@@ -92,6 +92,16 @@ function createWindow() {
 
   mainWindow.loadFile('index.html');
 
+  // Note bodies can contain web links; the renderer opens them via the
+  // shell:open-external IPC. These guards make the window itself inert:
+  // no click, middle-click, or URL drag-drop may navigate it or spawn a
+  // child window — http(s) attempts are routed to the default browser.
+  mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   mainWindow.on('close', () => {
     if (mainWindow) saveBounds(mainWindow.getBounds());
   });

@@ -1260,8 +1260,10 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   // whole header is a drag handle, so every button inside needs this guard.
   const btnDownRef = useRef(null);
 
-  const onHeaderDown = (e) => {
-    if (editingTitle || e.button!==0) return;
+  // Shared move-note drag. The header is the primary handle; the free
+  // stretch of the footer bar (left of the color dots) reuses it so a note
+  // whose header sits outside the viewport can still be moved (issue #16).
+  const startDrag = (e) => {
     e.stopPropagation();
     e.preventDefault();
     onFocus(e);
@@ -1332,6 +1334,11 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
+  };
+
+  const onHeaderDown = (e) => {
+    if (editingTitle || e.button!==0) return;
+    startDrag(e);
   };
 
   const onResize = (e) => {
@@ -1548,12 +1555,25 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         )}
       </div>
 
-      <div style={{
+      {/* Footer: everything left of the color dots is a second drag handle
+          (issue #16 — the note stays movable when the header is scrolled out
+          of view). Presses on the dots fall through to their onClick, so
+          adding more dots later just shrinks the grab area. */}
+      <div onPointerDown={e=>{ if (e.button===0 && !e.target.closest('button')) startDrag(e); }}
+        title="Drag to move"
+        style={{
         padding:'5px 10px', display:'flex', alignItems:'center', gap:6, flex:'none',
         borderTop: tweaks.theme==='terminal' ? `1px solid ${T.panelBorder}` : '1px solid rgba(0,0,0,.05)',
         background: tweaks.theme==='terminal' ? 'rgba(0,0,0,.2)' : 'transparent',
         fontSize:10, color:ink, opacity:.75,
+        cursor:'grab', userSelect:'none',
       }}>
+        <svg width="14" height="8" viewBox="0 0 14 8" aria-hidden="true" style={{flex:'none', opacity:.45}}>
+          <g fill={ink}>
+            <circle cx="2" cy="2" r="1"/><circle cx="7" cy="2" r="1"/><circle cx="12" cy="2" r="1"/>
+            <circle cx="2" cy="6" r="1"/><circle cx="7" cy="6" r="1"/><circle cx="12" cy="6" r="1"/>
+          </g>
+        </svg>
         <div style={{flex:1}}/>
         <ColorDots current={note.color} onPick={c=>onChange({color:c})} ink={ink}/>
       </div>

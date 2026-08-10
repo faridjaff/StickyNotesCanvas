@@ -458,6 +458,10 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
       if (e.target.matches('input, textarea, [contenteditable], [contenteditable="true"]')) return;
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase()==='c') {
+        // Text highlighted in a note's preview body (#30): the native copy
+        // must win. preventDefault + copySelected here would clobber the
+        // clipboard with whole-note payloads instead of the selected text.
+        if (hasTextSelection(window.getSelection())) return;
         if (selectedIds.size === 0) return;
         e.preventDefault();
         copySelected();
@@ -469,6 +473,9 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
         return;
       }
       if (mod && e.key.toLowerCase()==='x') {
+        // Same guard as Ctrl+C: while text is highlighted, Ctrl+X must not
+        // cut (delete!) the selected notes out from under the user.
+        if (hasTextSelection(window.getSelection())) return;
         if (selectedIds.size === 0) return;
         e.preventDefault();
         const ids = selectedIds;
@@ -608,6 +615,11 @@ globalStyle.textContent = `
   .md-body a.note-link { color: inherit; text-decoration: underline dotted; cursor: pointer; background: rgba(0,0,0,.05); padding: 0 3px; border-radius: 2px; }
   .md-body a.note-link:hover { background: rgba(0,0,0,.12); }
   kbd { font-family: ui-monospace, monospace; }
+  /* While a text selection drags inside one note body, nothing else on the
+     page is selectable — the browser then clamps the selection to that note
+     natively. Poor man's user-select: contain, which Chromium lacks. (#30) */
+  body.sel-lock * { user-select: none !important; }
+  body.sel-lock .sel-src, body.sel-lock .sel-src * { user-select: text !important; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.15); border-radius: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }

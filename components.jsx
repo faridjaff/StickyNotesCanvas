@@ -702,6 +702,12 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
     // Plain left-drag on empty canvas = marquee selection
     if (e.button === 0 && (e.target.id==='desk' || e.target.id==='desk-inner' || e.target.id==='desk-grid')) {
       e.preventDefault();
+      // preventDefault keeps the browser from natively collapsing any text
+      // highlight in a note body on this mousedown; collapse it explicitly
+      // so a stale selection doesn't keep hijacking Ctrl+C after the user
+      // has moved on to selecting notes (#30).
+      const ws = typeof window.getSelection === 'function' ? window.getSelection() : null;
+      if (ws && !ws.isCollapsed) ws.removeAllRanges();
       const rect = deskRef.current.getBoundingClientRect();
       const wx = (e.clientX - rect.left - view.x) / view.z;
       const wy = (e.clientY - rect.top  - view.y) / view.z;
@@ -1209,6 +1215,7 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 /* ==================================================================== */
 /* STICKY NOTE                                                           */
 /* ==================================================================== */
+
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
   bringGroupToFront,
   onFocus, onChange, onTogglePin, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
@@ -1224,6 +1231,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   // onChange) — Escape just calls onChange with the snapshot and exits.
   const origTitleRef = useRef('');
   const origBodyRef  = useRef('');
+  const bodyBoxRef   = useRef(null);
   useEffect(() => { if (editingTitle) origTitleRef.current = note.title; }, [editingTitle]);
   useEffect(() => { if (editing)      origBodyRef.current  = note.body;  }, [editing]);
 
@@ -1253,8 +1261,6 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   const bg = tweaks.theme==='paper' ? col.paper : tweaks.theme==='flat' ? col.flat : col.term;
   const ink = col.ink;
 
-  const [dragging, setDragging] = useState(false);
-  const draggingRef = useRef(false);
   // Remembers pointer-down coords on any header button (pin, link, ×) so we
   // can suppress its click if the user actually dragged the note by it. The
   // whole header is a drag handle, so every button inside needs this guard.
@@ -1266,9 +1272,14 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   const startDrag = (e) => {
     e.stopPropagation();
     e.preventDefault();
+    // preventDefault above also suppresses the browser's native "collapse
+    // the text selection on mousedown" behavior, so a highlight left in some
+    // note body would silently survive this drag and keep diverting Ctrl+C
+    // to stale text (#30). Grabbing a note signals note-level intent —
+    // drop the highlight explicitly.
+    const ws = typeof window.getSelection === 'function' ? window.getSelection() : null;
+    if (ws && !ws.isCollapsed) ws.removeAllRanges();
     onFocus(e);
-    draggingRef.current = true;
-    setDragging(true);
     const sX = e.clientX, sY = e.clientY;
     const z = zRef.current;
 
@@ -1304,8 +1315,6 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
         window.removeEventListener('pointercancel', up);
-        draggingRef.current = false;
-        setDragging(false);
         const targetFolder = folderIdUnder(ev);
         if (targetFolder && onMoveNotesToFolder) {
           onMoveNotesToFolder([...selectedIds], targetFolder);
@@ -1324,8 +1333,6 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      draggingRef.current = false;
-      setDragging(false);
       const targetFolder = folderIdUnder(ev);
       if (targetFolder && targetFolder !== note.folder && onMoveToFolder) {
         onMoveToFolder(targetFolder);
@@ -1365,18 +1372,13 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   const fontScale = tweaks.font === 'Caveat' ? 1.35 : 1;
 
   return (
+    // Deliberately NOT html5-draggable (issue #30): a `draggable` root made
+    // every press on the body start a note drag, which is exactly the gesture
+    // that selects text in a normal web app. Moving a note (including drop-
+    // onto-a-folder-row, single or multi-select) is handled entirely by the
+    // pointer-based startDrag on the header and footer handle, which resolves
+    // the folder under the pointer at release via folderIdUnder.
     <div ref={el} data-note="1" data-note-id={note.id}
-      draggable={!dragging && !editingTitle && !editing}
-      onDragStart={e=>{
-        if (draggingRef.current) { e.preventDefault(); return; }
-        // If this note is part of a multi-selection, carry every selected
-        // id so a drop on a folder moves the whole group at once.
-        const ids = (selected && selectedIds && selectedIds.size > 1)
-          ? [...selectedIds].join(',')
-          : note.id;
-        e.dataTransfer.setData('note-ids', ids);
-        e.dataTransfer.effectAllowed='move';
-      }}
       onMouseDown={onFocus}
       onContextMenu={e=>{e.preventDefault(); e.stopPropagation(); setMenu({x:e.clientX, y:e.clientY});}}
       style={{
@@ -1391,7 +1393,10 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           display:'flex', alignItems:'center', gap:8, padding:'6px 10px',
           background: tweaks.theme==='terminal' ? 'rgba(0,0,0,.2)' : 'rgba(0,0,0,.05)',
           borderBottom: tweaks.theme==='terminal' ? `1px solid ${T.panelBorder}` : '1px solid rgba(0,0,0,.04)',
-          cursor:'grab', userSelect:'none', flex:'none',
+          // touchAction none: with the body no longer a drag surface (#30),
+          // the header/footer are the only ways to move a note by touch —
+          // keep the browser from stealing their pointermoves for scrolling.
+          cursor:'grab', userSelect:'none', flex:'none', touchAction:'none',
           fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
         }}>
         <button
@@ -1493,13 +1498,73 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         </button>
       </div>
 
-      <div onDoubleClick={()=>setEditing(true)}
+      <div onDoubleClick={()=>setEditing(true)} ref={bodyBoxRef}
+        onPointerDown={e=>{
+          // Mouse/pen drag-selection in preview: while the drag lasts, the
+          // sel-lock class makes everything outside this body unselectable,
+          // so the browser natively clamps the selection to this note (see
+          // the global stylesheet). Touch selection uses long-press handles
+          // and needs no help. (#30)
+          if (editing || e.button!==0 || e.pointerType==='touch') return;
+          const box = bodyBoxRef.current; if (!box) return;
+          box.classList.add('sel-src');
+          document.body.classList.add('sel-lock');
+          // With the pointer outside the note, the browser hit-tests the
+          // unselectable desk behind it, and its fallback can resolve to a
+          // position BEFORE the note — flipping the selection backward when
+          // dragging past the bottom edge. When the pointer is outside the
+          // box, pick the end by geometry instead; inside, native wins.
+          // The browser extends the selection as the mousemove DEFAULT
+          // action, i.e. after listeners run — so the correction must wait
+          // in a rAF, which fires after that but before the frame paints.
+          const at = { x: e.clientX, y: e.clientY };
+          let raf = 0;
+          const fix = ()=>{
+            raf = 0;
+            const sel = window.getSelection();
+            if (!sel || !sel.rangeCount || !sel.anchorNode || !box.contains(sel.anchorNode)) return;
+            const r = box.getBoundingClientRect();
+            let side = 0;
+            if      (at.y < r.top)    side = -1;
+            else if (at.y > r.bottom) side = 1;
+            else if (at.x < r.left)   side = -1;
+            else if (at.x > r.right)  side = 1;
+            if (!side) return;
+            const want = document.createRange();
+            want.selectNodeContents(box);
+            want.collapse(side < 0);
+            if (want.comparePoint(sel.focusNode, sel.focusOffset) === 0) return;
+            sel.extend(box, side < 0 ? 0 : box.childNodes.length);
+          };
+          const move = ev=>{
+            at.x = ev.clientX; at.y = ev.clientY;
+            if (!raf) raf = requestAnimationFrame(fix);
+          };
+          const done = ()=>{
+            if (raf) cancelAnimationFrame(raf);
+            fix();
+            box.classList.remove('sel-src');
+            document.body.classList.remove('sel-lock');
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', done);
+            document.removeEventListener('pointercancel', done);
+            window.removeEventListener('blur', done);
+          };
+          document.addEventListener('pointermove', move);
+          document.addEventListener('pointerup', done);
+          document.addEventListener('pointercancel', done);
+          window.addEventListener('blur', done);
+        }}
         style={{
           flex:1, padding:'10px 14px', overflow:'auto',
           fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
           fontSize: (tweaks.theme==='paper' ? 18 : 13.5) * fontScale,
           lineHeight: tweaks.theme==='paper' ? 1.35 : 1.5,
           color:ink,
+          // Body text is selectable like a normal web page (issue #30) so a
+          // snippet can be copied without entering edit mode. Only the header
+          // and the footer bar move the note.
+          userSelect:'text', cursor:'text',
         }}>
         {editing ? (
           <textarea autoFocus value={note.body} dir="auto"
@@ -1546,6 +1611,11 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         ) : (
           <div className="md-body" dir="auto" dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
             onClick={(e)=>{
+              // The mouseup that ends a text-selection drag arrives as a
+              // click on whatever element the pointer was released over. If
+              // text is highlighted, the user was selecting — not asking to
+              // open the link under the cursor. (#30)
+              if (hasTextSelection(window.getSelection())) return;
               const w = e.target.closest('[data-weblink]');
               if (w) { e.preventDefault(); openWebLink(w.dataset.weblink); return; }
               const a = e.target.closest('[data-link]');
@@ -1566,7 +1636,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         borderTop: tweaks.theme==='terminal' ? `1px solid ${T.panelBorder}` : '1px solid rgba(0,0,0,.05)',
         background: tweaks.theme==='terminal' ? 'rgba(0,0,0,.2)' : 'transparent',
         fontSize:10, color:ink, opacity:.75,
-        cursor:'grab', userSelect:'none',
+        cursor:'grab', userSelect:'none', touchAction:'none',
       }}>
         <svg width="14" height="8" viewBox="0 0 14 8" aria-hidden="true" style={{flex:'none', opacity:.45}}>
           <g fill={ink}>

@@ -516,6 +516,18 @@ function themeTokens(theme) {
 
 function uid(pre='id') { return pre + '_' + Math.random().toString(36).slice(2,8); }
 function hashRot(id) { let h=0; for (let i=0;i<id.length;i++) h=(h*31+id.charCodeAt(i))|0; return ((h%7)-3)*0.4; }
+// True when the user has actual text highlighted (e.g. drag-selected in a
+// note's preview body — issue #30). Used to keep the app from hijacking a
+// selection: the global Ctrl+C/Ctrl+X note shortcuts must yield to the
+// native clipboard action, and the click that ends a selection drag must
+// not open the link it happens to land on. Takes the Selection object
+// (window.getSelection()) as an argument so it stays pure and testable.
+// A collapsed selection is just a caret from a plain click — not a
+// selection. An empty toString() (e.g. a selection spanning only element
+// boundaries) carries no copyable text, so it doesn't count either.
+function hasTextSelection(sel) {
+  return !!sel && !sel.isCollapsed && sel.toString().length > 0;
+}
 function withA(hex, a) {
   const h = hex.replace('#',''); const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
@@ -583,4 +595,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

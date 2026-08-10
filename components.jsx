@@ -1216,6 +1216,52 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 /* STICKY NOTE                                                           */
 /* ==================================================================== */
 
+// Runs a window-scoped pointer-drag session for note move/resize. Compared
+// to raw pointermove listeners this (issue #18, touch dragging):
+//  - filters events to the pointer that started the gesture — window-level
+//    pointermove receives EVERY active pointer, so a stray second finger
+//    (or palm) would otherwise teleport the note between two anchors;
+//  - coalesces moves to one per animation frame — touch digitizers report
+//    faster than the display refreshes, and re-rendering the canvas per
+//    input sample (instead of per frame) is what reads as stutter;
+//  - flushes the last pending move before ending so the release position
+//    is never a frame behind the finger.
+// pointercancel is treated like pointerup: with touch-action:none on the
+// drag handles it should no longer fire mid-drag, but if the OS does claim
+// the gesture we end cleanly instead of leaving a stuck drag.
+// A second touch joining mid-drag ends the drag at its current position:
+// two fingers mean canvas pinch-zoom, not note dragging, and without this
+// the note would keep chasing finger 1 while the canvas zooms.
+function startPointerDrag(e, onMove, onEnd) {
+  const pid = e.pointerId, isTouch = e.pointerType === 'touch';
+  let raf = 0, last = e;
+  const finish = (ev) => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', end);
+    window.removeEventListener('pointercancel', end);
+    window.removeEventListener('pointerdown', down);
+    if (raf) { cancelAnimationFrame(raf); raf = 0; onMove(last); }
+    if (onEnd) onEnd(ev);
+  };
+  const move = (ev) => {
+    if (ev.pointerId !== pid) return;
+    last = ev;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; onMove(last); });
+  };
+  const end = (ev) => {
+    if (ev.pointerId !== pid) return;
+    finish(ev);
+  };
+  const down = (ev) => {
+    // finish with the drag pointer's last event, not the new finger's —
+    // onEnd handlers read coordinates off it (drag-to-folder hit test).
+    if (isTouch && ev.pointerType === 'touch' && ev.pointerId !== pid) finish(last);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+  window.addEventListener('pointerdown', down);
+}
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
   bringGroupToFront,
   onFocus, onChange, onTogglePin, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
@@ -1298,6 +1344,14 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   // whole header is a drag handle, so every button inside needs this guard.
   const btnDownRef = useRef(null);
 
+  // Parsing markdown is the priciest part of a note's render, and dragging
+  // any note re-renders every note on each frame — memoize per body so the
+  // untouched notes don't re-parse while one is being dragged (issue #18).
+  // The mermaid effect below is unaffected: it keys on note.body and swaps
+  // DOM nodes after render, and React only resets innerHTML when the html
+  // string actually changes.
+  const bodyHtml = useMemo(() => mdToHtml(note.body), [note.body]);
+
   // Shared move-note drag. The header is the primary handle; the free
   // stretch of the footer bar (left of the color dots) reuses it so a note
   // whose header sits outside the viewport can still be moved (issue #16).
@@ -1344,17 +1398,12 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         }));
       };
       const up = (ev) => {
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
-        window.removeEventListener('pointercancel', up);
         const targetFolder = folderIdUnder(ev);
         if (targetFolder && onMoveNotesToFolder) {
           onMoveNotesToFolder([...selectedIds], targetFolder);
         }
       };
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
-      window.addEventListener('pointercancel', up);
+      startPointerDrag(e, move, up);
       return;
     }
 
@@ -1362,17 +1411,12 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
     const { x:nx, y:ny } = note;
     const move = (ev) => onChange({ x: nx+(ev.clientX-sX)/z, y: ny+(ev.clientY-sY)/z });
     const up = (ev) => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
       const targetFolder = folderIdUnder(ev);
       if (targetFolder && targetFolder !== note.folder && onMoveToFolder) {
         onMoveToFolder(targetFolder);
       }
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
+    startPointerDrag(e, move, up);
   };
 
   const onHeaderDown = (e) => {
@@ -1386,14 +1430,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
     const sX = e.clientX, sY = e.clientY;
     const { w, h } = note;
     const move = (ev) => onChange({ w: Math.max(180, w+(ev.clientX-sX)/zRef.current), h: Math.max(120, h+(ev.clientY-sY)/zRef.current) });
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
+    startPointerDrag(e, move);
   };
 
   const rot = tweaks.theme==='paper' && tweaks.tilt !== false ? hashRot(note.id) : 0;
@@ -1676,7 +1713,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               background:'transparent', color:'inherit', font:'inherit', lineHeight:'inherit'}}
           />
         ) : (
-          <div className="md-body" dir="auto" ref={mdBodyRef} dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
+          <div className="md-body" dir="auto" ref={mdBodyRef} dangerouslySetInnerHTML={{__html: bodyHtml}}
             onClick={(e)=>{
               // The mouseup that ends a text-selection drag arrives as a
               // click on whatever element the pointer was released over. If
@@ -1717,6 +1754,10 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
 
       <div onPointerDown={onResize}
         style={{position:'absolute', right:0, bottom:0, width:14, height:14, cursor:'nwse-resize',
+          // Same contract as the header/footer handles: without touch-action
+          // none the browser claims a touch resize as scroll/pan and
+          // pointercancels it mid-gesture (issue #18).
+          touchAction:'none',
           background: `linear-gradient(135deg, transparent 40%, ${withA(ink,0.25)} 40%, ${withA(ink,0.25)} 50%, transparent 50%, transparent 60%, ${withA(ink,0.25)} 60%, ${withA(ink,0.25)} 70%, transparent 70%)`,
         }}/>
 

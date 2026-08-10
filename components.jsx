@@ -152,7 +152,7 @@ The output has three sections, in order:
 Each note in the JSON has these fields:
   - "id":     short string unique within the payload (e.g. "n1","n2"); used only to wire links and is remapped on paste.
   - "title":  string. Short heading. If the note has no obvious title, infer one from its first line.
-  - "body":   string. Remaining content. Use "\\n" between lines. Markdown subset supported: # heading, ## subheading, - or * bullet lists, **bold**, *italic* or _italic_, \`inline code\`. Avoid other markdown (numbered lists, [links](url), images, fenced code blocks, tables, blockquotes) — they render as plain text.
+  - "body":   string. Remaining content. Use "\\n" between lines. Markdown supported: # headings (all levels), - or * bullet lists, numbered lists, **bold**, *italic* or _italic_, \`inline code\`, fenced code blocks, blockquotes, tables, [links](url) and images (http/https only).
   - "w":      integer pixel width. Use 260 by default; use ~300 for notes with wide/long lines.
   - "h":      integer pixel height. Use 180 by default; use 220–280 for notes with lots of text.
   - "pinned": false
@@ -1576,13 +1576,15 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             onBlur={()=>setEditing(false)}
             onPaste={e=>{
               // Slack-style: pasting a URL over selected text wraps the
-              // selection as [selection](url). Same execCommand contract as
-              // the Enter/Tab list edits below (native undo + React onChange
-              // keep working); null means "not a link paste" — fall through
-              // to the default paste.
+              // selection as [selection](url); pasting multi-line text on a
+              // blockquote line spreads the "> " prefix over every pasted
+              // line. Same execCommand contract as the Enter/Tab list edits
+              // below (native undo + React onChange keep working); null from
+              // both means fall through to the default paste.
               const ta = e.target;
-              const edit = editLinkOnPaste(ta.value, ta.selectionStart, ta.selectionEnd,
-                e.clipboardData ? e.clipboardData.getData('text/plain') : '');
+              const pasted = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+              const edit = editLinkOnPaste(ta.value, ta.selectionStart, ta.selectionEnd, pasted)
+                || editQuoteOnPaste(ta.value, ta.selectionStart, ta.selectionEnd, pasted);
               if (!edit) return;
               e.preventDefault();
               ta.setSelectionRange(edit.start, edit.end);

@@ -8,12 +8,15 @@ import { fileURLToPath } from 'node:url';
 // utils.jsx is a browser-global script (no module exports). It only touches
 // `React` (top-level destructure) and `window` (final Object.assign) at load
 // time, so we can load it in a vm sandbox with light shims and read the pure
-// helpers back off the shimmed `window`.
+// helpers back off the shimmed `window`. The renderer needs the vendored
+// markdown-it UMD build evaluated first — it attaches the `markdownit`
+// factory to the sandbox global, exactly like the <script> tag in index.html
+// does in the browser.
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const code = fs.readFileSync(path.join(dir, '..', 'utils.jsx'), 'utf8');
 const sandbox = { React: {}, window: {}, document: {}, navigator: {}, console, Math, JSON, Date };
 vm.createContext(sandbox);
-vm.runInContext(code, sandbox);
+vm.runInContext(fs.readFileSync(path.join(dir, '..', 'vendor', 'markdown-it.min.js'), 'utf8'), sandbox);
+vm.runInContext(fs.readFileSync(path.join(dir, '..', 'utils.jsx'), 'utf8'), sandbox);
 const { mdToHtml } = sandbox.window;
 
 /* ---------------- mdToHtml: inline code spans (issue #12) ---------------- */
@@ -58,9 +61,9 @@ test('code spans inside list items keep their underscores', () => {
     '<ul dir="auto"><li dir="auto">rerun <code>make menu_config</code></li></ul>');
 });
 
-/* ------------- emphasis flanking (CommonMark-aligned behavior) -------------
- * Expected outputs below were checked against the reference CommonMark
- * parser: intraword `_` is inert, space-padded `*`/`**` is inert.
+/* ------------- emphasis flanking (CommonMark behavior) -------------
+ * markdown-it is a full CommonMark parser, so intraword `_` is inert and
+ * space-padded `*`/`**` is inert — same expectations as before the swap.
  */
 
 test('intraword underscores stay literal (snake_case)', () => {
@@ -160,7 +163,7 @@ test('underscores in a link URL are never italicized', () => {
     '<p dir="auto"><a href="https://x.y/a_b_c" data-weblink="https://x.y/a_b_c">k</a></p>');
 });
 
-test('bare URLs auto-link with the URL as text', () => {
+test('bare URLs auto-link with the URL as text (linkify)', () => {
   assert.equal(mdToHtml('see https://x.y/p'),
     '<p dir="auto">see <a href="https://x.y/p" data-weblink="https://x.y/p">https://x.y/p</a></p>');
 });
@@ -180,24 +183,19 @@ test('query-string ampersands survive escaping in href and text', () => {
     '<p dir="auto"><a href="https://x.y?a=1&amp;b=2" data-weblink="https://x.y?a=1&amp;b=2">https://x.y?a=1&amp;b=2</a></p>');
 });
 
-test('javascript: URLs never become links', () => {
-  assert.equal(mdToHtml('[x](javascript:alert(1))'),
-    '<p dir="auto">[x](javascript:alert(1))</p>');
+test('a scheme-less www URL linkifies with http:// prefixed', () => {
+  assert.equal(mdToHtml('www.example.com'),
+    '<p dir="auto"><a href="http://www.example.com" data-weblink="http://www.example.com">www.example.com</a></p>');
 });
 
-test('a double quote in a link URL is attribute-escaped', () => {
+test('a double quote in a link URL is encoded, never a live attribute quote', () => {
   assert.equal(mdToHtml('[x](https://x.y/a"b)'),
-    '<p dir="auto"><a href="https://x.y/a&quot;b" data-weblink="https://x.y/a&quot;b">x</a></p>');
+    '<p dir="auto"><a href="https://x.y/a%22b" data-weblink="https://x.y/a%22b">x</a></p>');
 });
 
 test('link syntax inside a code span stays literal', () => {
   assert.equal(mdToHtml('`[x](https://x.y)`'),
     '<p dir="auto"><code>[x](https://x.y)</code></p>');
-});
-
-test('image syntax stays fully literal (unsupported)', () => {
-  assert.equal(mdToHtml('![alt](https://x.y/i.png)'),
-    '<p dir="auto">![alt](https://x.y/i.png)</p>');
 });
 
 test('two links on one line both render', () => {
@@ -208,4 +206,138 @@ test('two links on one line both render', () => {
 test('a bare URL inside emphasis stays a working link', () => {
   assert.equal(mdToHtml('_see https://x.y_'),
     '<p dir="auto"><em>see <a href="https://x.y" data-weblink="https://x.y">https://x.y</a></em></p>');
+});
+
+/* -------- href restriction: only http(s) may become clickable -------- */
+
+test('javascript: URLs never become links', () => {
+  assert.equal(mdToHtml('[x](javascript:alert(1))'),
+    '<p dir="auto">[x](javascript:alert(1))</p>');
+});
+
+test('data: URLs never become links', () => {
+  assert.equal(mdToHtml('[d](data:text/html,<script>alert(1)</script>)'),
+    '<p dir="auto">[d](data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;)</p>');
+});
+
+test('mailto: URLs never become links (http/https only)', () => {
+  assert.equal(mdToHtml('[m](mailto:a@b.c)'),
+    '<p dir="auto">[m](mailto:a@b.c)</p>');
+});
+
+test('ftp: URLs never become links (http/https only)', () => {
+  assert.equal(mdToHtml('[f](ftp://x.y/f)'),
+    '<p dir="auto">[f](ftp://x.y/f)</p>');
+});
+
+/* ---------------- XSS: raw HTML is always escaped ---------------- */
+
+test('a script tag in a note renders as escaped text', () => {
+  assert.equal(mdToHtml('<script>alert(1)</script>'),
+    '<p dir="auto">&lt;script&gt;alert(1)&lt;/script&gt;</p>');
+});
+
+test('an inline HTML img with an event handler renders as escaped text', () => {
+  assert.equal(mdToHtml('<img src=x onerror=alert(1)>'),
+    '<p dir="auto">&lt;img src=x onerror=alert(1)&gt;</p>');
+});
+
+/* ---------------- images ---------------- */
+
+test('image syntax renders an <img> for http(s) sources', () => {
+  assert.equal(mdToHtml('![alt](https://x.y/i.png)'),
+    '<p dir="auto"><img src="https://x.y/i.png" alt="alt"></p>');
+});
+
+test('image with a javascript: source stays literal text', () => {
+  assert.equal(mdToHtml('![bad](javascript:alert(1))'),
+    '<p dir="auto">![bad](javascript:alert(1))</p>');
+});
+
+/* -------- headings: note-sized scale, # → h3 … #### and deeper → h6 -------- */
+
+test('# renders h3 (note-sized top heading)', () => {
+  assert.equal(mdToHtml('# One'), '<h3 dir="auto">One</h3>');
+});
+
+test('## renders h4', () => {
+  assert.equal(mdToHtml('## Two'), '<h4 dir="auto">Two</h4>');
+});
+
+test('### renders h5 (issue #32)', () => {
+  assert.equal(mdToHtml('### Three'), '<h5 dir="auto">Three</h5>');
+});
+
+test('#### renders h6', () => {
+  assert.equal(mdToHtml('#### Four'), '<h6 dir="auto">Four</h6>');
+});
+
+test('##### and ###### clamp at h6', () => {
+  assert.equal(mdToHtml('##### Five'), '<h6 dir="auto">Five</h6>');
+  assert.equal(mdToHtml('###### Six'), '<h6 dir="auto">Six</h6>');
+});
+
+/* ---------------- ordered lists ---------------- */
+
+test('a numbered list renders <ol>', () => {
+  assert.equal(mdToHtml('1. a\n2. b'),
+    '<ol dir="auto"><li dir="auto">a</li><li dir="auto">b</li></ol>');
+});
+
+test('a numbered list starting past 1 keeps its start number', () => {
+  assert.equal(mdToHtml('3. a\n4. b'),
+    '<ol start="3" dir="auto"><li dir="auto">a</li><li dir="auto">b</li></ol>');
+});
+
+/* ---------------- blockquotes ---------------- */
+
+test('a > line renders a blockquote with dir on every block', () => {
+  assert.equal(mdToHtml('> quoted _line_'),
+    '<blockquote dir="auto"><p dir="auto">quoted <em>line</em></p></blockquote>');
+});
+
+/* ---------------- fenced code ---------------- */
+
+test('a fenced block renders <pre><code> with the language as a class', () => {
+  assert.equal(mdToHtml('```js\nconst x = 1;\n```'),
+    '<pre dir="auto"><code class="language-js">const x = 1;\n</code></pre>');
+});
+
+test('a fenced block with no language renders a plain <pre><code>', () => {
+  assert.equal(mdToHtml('```\nplain\n```'),
+    '<pre dir="auto"><code>plain\n</code></pre>');
+});
+
+test('emphasis markers inside a fence stay literal', () => {
+  assert.equal(mdToHtml('```\n_a_ and **b**\n```'),
+    '<pre dir="auto"><code>_a_ and **b**\n</code></pre>');
+});
+
+/* ---------------- tables ---------------- */
+
+test('a pipe table renders with dir="auto" on every block element', () => {
+  assert.equal(mdToHtml('| a | b |\n| - | - |\n| 1 | 2 |'),
+    '<table dir="auto"><thead dir="auto"><tr dir="auto"><th dir="auto">a</th><th dir="auto">b</th></tr></thead>' +
+    '<tbody dir="auto"><tr dir="auto"><td dir="auto">1</td><td dir="auto">2</td></tr></tbody></table>');
+});
+
+/* ---------------- RTL / paragraph shape ---------------- */
+
+test('an RTL line still gets dir="auto" so the browser right-aligns it', () => {
+  assert.equal(mdToHtml('שלום עולם'), '<p dir="auto">שלום עולם</p>');
+});
+
+test('a single newline stays a visible line break (breaks: true)', () => {
+  assert.equal(mdToHtml('line one\nline two'),
+    '<p dir="auto">line one<br>line two</p>');
+});
+
+test('a blank line separates paragraphs and keeps its own empty line (#26)', () => {
+  assert.equal(mdToHtml('para one\n\npara two'),
+    '<p dir="auto">para one</p><p dir="auto"><br></p><p dir="auto">para two</p>');
+});
+
+test('empty / missing input renders one empty line, like the empty textarea', () => {
+  assert.equal(mdToHtml(''), '<p dir="auto"><br></p>');
+  assert.equal(mdToHtml(undefined), '<p dir="auto"><br></p>');
 });

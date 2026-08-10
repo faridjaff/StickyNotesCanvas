@@ -612,13 +612,26 @@ globalStyle.textContent = `
      overflow-wrap matches the textarea's UA break-word; zeroed block margins
      make consecutive lines stack purely at line-height, so all vertical
      rhythm comes from the text itself (blank lines arrive from mdToHtml as
-     explicit empty paragraphs). */
+     explicit empty paragraphs). Every block element markdown-it can emit
+     keeps that flat rhythm: margin 0, no vertical padding surprises. */
   .md-body { white-space: pre-wrap; overflow-wrap: break-word; }
   .md-body h3 { font-size: 1.05em; margin: 0; font-weight: 700; }
   .md-body h4 { font-size: 1em; margin: 0; font-weight: 700; opacity: .85; }
+  .md-body h5 { font-size: .92em; margin: 0; font-weight: 700; opacity: .75; letter-spacing: .02em; }
+  .md-body h6 { font-size: .85em; margin: 0; font-weight: 700; opacity: .6; text-transform: uppercase; letter-spacing: .05em; }
   .md-body p { margin: 0; }
   .md-body ul { margin: 0; padding-left: 18px; }
+  .md-body ol { margin: 0; padding-left: 18px; }
+  .md-body ol ol { list-style: lower-alpha; }
+  .md-body ol ol ol { list-style: lower-roman; }
   .md-body li { margin: 0; }
+  .md-body blockquote { margin: 0; padding: 0 0 0 10px; border-left: 3px solid rgba(0,0,0,.25); opacity: .85; }
+  .md-body pre { margin: 0; padding: 6px 8px; background: rgba(0,0,0,.06); border-radius: 4px; overflow-x: auto; }
+  .md-body pre code { display: block; background: transparent; padding: 0; }
+  .md-body table { border-collapse: collapse; margin: 0; font-size: .95em; }
+  .md-body th, .md-body td { border: 1px solid rgba(0,0,0,.2); padding: 2px 6px; }
+  .md-body img { max-width: 100%; }
+  .md-body hr { border: none; border-top: 1px solid rgba(0,0,0,.2); margin: 0; }
   .md-body code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
   .md-body a.note-link { color: inherit; text-decoration: underline dotted; cursor: pointer; background: rgba(0,0,0,.05); padding: 0 3px; border-radius: 2px; }
   .md-body a.note-link:hover { background: rgba(0,0,0,.12); }

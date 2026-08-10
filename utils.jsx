@@ -77,138 +77,156 @@ const SEED = {
   ],
 };
 
-/* ---------- MARKDOWN ---------- */
-function mdToHtml(src) {
-  const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-  const inline = s => {
-    s = esc(s);
-    // Pull code spans out FIRST so emphasis markers inside them stay literal
-    // (issue #12: `CONFIG_PREEMPT_RT=y` must not italicize). The \x00/\x01
-    // sentinels can't occur in note text (inputs strip control characters),
-    // so they're safe stashes.
-    const codes = [];
-    s = s.replace(/`([^`]+)`/g, (_, code) => {
-      codes.push(`<code>${code}</code>`);
-      return `\x00${codes.length - 1}\x00`;
-    });
-    // Backslash-escaped markers render literally (CommonMark), but NOT inside
-    // code spans — which is why this runs after the code stash above.
-    const escapes = [];
-    s = s.replace(/\\([*_`])/g, (_, ch) => {
-      escapes.push(ch);
-      return `\x01${escapes.length - 1}\x01`;
-    });
-    // Web links, http(s)-only by construction so javascript:/file:/data:
-    // URLs can never become clickable. URLs are stashed like code spans
-    // (their underscores must stay literal); link TEXT stays in the stream
-    // between \x02/\x03 markers so emphasis inside it still renders.
-    // data-weblink is what the note-body click delegate dispatches on.
-    const attr = u => u.replace(/"/g, '&quot;');
-    const links = [];
-    // [text](url) — a leading ! is unsupported image syntax: stash the whole
-    // match verbatim so it renders exactly as typed.
-    s = s.replace(/(!?)\[([^\]]+)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/gi, (m, bang, text, url) => {
-      if (bang) { codes.push(m); return `\x00${codes.length - 1}\x00`; }
-      links.push(`<a href="${attr(url)}" data-weblink="${attr(url)}">`);
-      return `\x02${links.length - 1}\x02${text}\x03`;
-    });
-    // Bare URLs auto-link (URL as text). One balanced (...) group may belong
-    // to the URL (Wikipedia); trailing punctuation stays outside the link.
-    // The &lt;/&gt; lookaheads stop at what was a real < or > before esc().
-    s = s.replace(/(^|[\s(])(https?:\/\/(?:(?!&lt;|&gt;)[^\s()"])+(?:\((?:(?!&lt;|&gt;)[^\s()"])*\))?(?:(?!&lt;|&gt;)[^\s()"])*)/gi, (m, pre, url) => {
-      const trail = (url.match(/[.,;:!?_*~]+$/) || [''])[0];
-      if (trail) url = url.slice(0, -trail.length);
-      if (!/^https?:\/\/./i.test(url)) return m;
-      codes.push(`<a href="${attr(url)}" data-weblink="${attr(url)}">${url}</a>`);
-      return `${pre}\x00${codes.length - 1}\x00${trail}`;
-    });
-    // Emphasis follows CommonMark's flanking rules, approximated: '*' works
-    // intraword but not space-padded; '_' only at word edges, so snake_case
-    // and CONFIG_PREEMPT_RT stay literal. A word edge is start/end of line,
-    // whitespace, punctuation/symbols, or a stashed span (\x00-\x03).
-    s = s.replace(/\*\*([^\s*](?:.*?[^\s*])?)\*\*/g, '<strong>$1</strong>');
-    s = s.replace(/(^|[\s\p{P}\p{S}\x00-\x03])__([^\s_](?:.*?[^\s_])?)__(?=[\s\p{P}\p{S}\x00-\x03]|$)/gu, '$1<strong>$2</strong>');
-    s = s.replace(/\*([^\s*](?:[^*]*[^\s*])?)\*/g, '<em>$1</em>');
-    s = s.replace(/(^|[\s\p{P}\p{S}\x00-\x03])_([^\s_](?:.*?[^\s_])?)_(?=[\s\p{P}\p{S}\x00-\x03]|$)/gu, '$1<em>$2</em>');
-    s = s.replace(/\x02(\d+)\x02/g, (_, i) => links[i]);
-    s = s.replace(/\x03/g, '</a>');
-    s = s.replace(/\x01(\d+)\x01/g, (_, i) => escapes[i]);
-    s = s.replace(/\x00(\d+)\x00/g, (_, i) => codes[i]);
-    return s;
-  };
-  const lines = src.split('\n');
-  let out = '';
-  let items = null; // buffered bullet items [{depth, html}] while inside a list
+/* ---------- MARKDOWN ----------
+ * Rendering is markdown-it (vendor/markdown-it.min.js, UMD global
+ * `markdownit`, loaded from index.html like React), tuned for sticky notes:
+ *   - html:false   — raw HTML in a note is always escaped, never parsed (XSS).
+ *   - linkify:true — bare URLs become links.
+ *   - breaks:true  — a single newline stays a visible line break, matching
+ *                    how people write notes (the old renderer emitted one
+ *                    block per line).
+ *   - validateLink restricts link/image targets to http(s) only, so
+ *     javascript:, data:, file: etc. can never become clickable/fetchable.
+ *   - every block-level tag carries dir="auto" so RTL lines lay out right.
+ *   - headings shift down two levels (# → h3, ## → h4, ### → h5, #### and
+ *     deeper → h6) so they stay note-sized.
+ *   - fenced code renders <pre><code class="language-x">.
+ *   - anchors carry data-weblink, which the note-body click delegate
+ *     dispatches on to open links outside the app (see NoteCard).
+ * Preview <-> edit parity (issue #26) is preserved across the swap — the
+ * rendered preview must occupy the same lines as the raw text in the
+ * editing textarea (tests/preview-parity.test.mjs is the contract):
+ *   - every blank/whitespace-only source line outside a code fence becomes
+ *     an explicit empty paragraph (<p dir="auto"><br></p>), one per line —
+ *     markdown-it alone would collapse the whole run into one separator
+ *     (markBlankLines below marks them; the sentinel paragraphs are swapped
+ *     for empty ones after rendering);
+ *   - leading/trailing spaces on plain paragraph lines are restored from
+ *     the source (a core rule below — markdown-it trims them);
+ *   - the renderer emits no pretty-print newlines between tags: .md-body is
+ *     white-space:pre-wrap, so a literal newline in the HTML would render
+ *     as an extra line the textarea doesn't have.
+ * The instance is created lazily so this file still loads in the node test
+ * sandbox even when the markdown-it vendor script isn't evaluated first.
+ */
+// Sentinel for "this was a blank source line" (private-use codepoint, never
+// meaningful in note text; stripped from input first so it can't be forged).
+const BLANK_LINE = '\uE000';
+const BLANK_LINE_P = '<p dir="auto"><br></p>';
 
-  // Emit the buffered list as nested <ul>/<li>. A sub-list nests INSIDE the
-  // preceding <li> (valid HTML, not <ul> directly in <ul>). Indentation maps
-  // to depth at INDENT_UNIT (2) columns per level; a tab counts as 2 columns.
-  // A flat list (every item at depth 0) renders identically to the old output.
-  const flush = () => {
-    if (!items) return;
-    let prev = -1;       // normalized depth of the previous item
-    let liOpen = false;  // is the current <li> still awaiting its </li>?
-    for (const it of items) {
-      // Clamp so depth never jumps more than one level past the previous item.
-      const depth = prev < 0 ? 0 : Math.min(it.depth, prev + 1);
-      if (prev < 0) {
-        out += '<ul dir="auto">';
-      } else if (depth > prev) {
-        for (let k = prev; k < depth; k++) out += '<ul dir="auto">'; // nest inside the open <li>
-        liOpen = false;
-      } else if (depth < prev) {
-        if (liOpen) { out += '</li>'; liOpen = false; }
-        for (let k = prev; k > depth; k--) out += '</ul></li>';
-      } else if (liOpen) {
-        out += '</li>'; liOpen = false;
-      }
-      out += `<li dir="auto">${it.html}`;
-      liOpen = true;
-      prev = depth;
-    }
-    if (liOpen) out += '</li>';
-    for (let k = prev; k > 0; k--) out += '</ul></li>';
-    out += '</ul>';
-    items = null;
-  };
-
-  for (let ln of lines) {
-    if (/^\s*#\s/.test(ln))  { flush(); out += `<h3 dir="auto">${inline(ln.replace(/^\s*#\s/,''))}</h3>`; continue; }
-    if (/^\s*##\s/.test(ln)) { flush(); out += `<h4 dir="auto">${inline(ln.replace(/^\s*##\s/,''))}</h4>`; continue; }
-    const bm = ln.match(/^(\s*)[-*]\s+(.*)$/);
-    if (bm) {
-      const depth = Math.floor(bm[1].replace(/\t/g, '  ').length / 2);
-      if (!items) items = [];
-      items.push({ depth, html: inline(bm[2]) });
+// Pre-pass: replace each blank (or whitespace-only) source line outside a
+// code fence with a sentinel paragraph of its own, padded with real blank
+// lines so markdown-it parses every one as a separate block. This is what
+// keeps "N blank lines in the textarea" = "N empty lines in the preview"
+// (issue #26) — and, deliberately, what makes a blank line between bullets
+// split the list instead of forming one loose list.
+const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+function markBlankLines(src) {
+  const out = [];
+  let fence = null;
+  for (const ln of src.split('\n')) {
+    const m = ln.match(FENCE_LINE);
+    if (fence) {
+      // Inside a fence blank lines are code, not vertical rhythm.
+      out.push(ln);
+      if (m && m[1][0] === fence.marker && m[1].length >= fence.len && m[2].trim() === '') fence = null;
       continue;
     }
-    // A blank (or whitespace-only) line occupies exactly one line in the
-    // editing textarea, so the preview must render one empty line too
-    // (issue #26). The <br> guarantees the paragraph keeps a line box even
-    // with the zeroed margins in the .md-body CSS.
-    if (ln.trim() === '') { flush(); out += '<p dir="auto"><br></p>'; continue; }
-    flush();
-    out += `<p dir="auto">${inline(ln)}</p>`;
+    if (m) { fence = { marker: m[1][0], len: m[1].length }; out.push(ln); continue; }
+    if (ln.trim() === '') { out.push('', BLANK_LINE, ''); continue; }
+    out.push(ln);
   }
-  flush();
-  return out;
+  return out.join('\n');
+}
+
+let _md = null;
+function getMarkdownIt() {
+  if (_md) return _md;
+  const md = markdownit({ html: false, linkify: true, breaks: true });
+  md.validateLink = url => /^https?:\/\//i.test(url);
+  // Restore the leading/trailing spaces markdown-it trims off plain
+  // paragraph lines (issue #26: the textarea shows them, so the preview
+  // must too — .md-body's pre-wrap then renders them verbatim). Runs after
+  // block parsing, before inline: the inline token still carries its source
+  // line span, and only paragraphs whose content is exactly the trimmed
+  // source (i.e. no marker/indent was consumed — not list items, quotes or
+  // lazy continuations) are restored.
+  md.core.ruler.after('block', 'sticky_preserve_ws', state => {
+    const lines = state.src.split('\n');
+    for (let i = 1; i < state.tokens.length; i++) {
+      const tok = state.tokens[i];
+      if (tok.type !== 'inline' || !tok.map || state.tokens[i - 1].type !== 'paragraph_open') continue;
+      const orig = lines.slice(tok.map[0], tok.map[1]).join('\n');
+      if (orig !== tok.content && orig.trim() === tok.content) tok.content = orig;
+    }
+  });
+  md.core.ruler.push('sticky_note_blocks', state => {
+    for (const tok of state.tokens) {
+      // Note-sized headings: shift every level down by two, clamped at h6.
+      if ((tok.type === 'heading_open' || tok.type === 'heading_close') && /^h[1-6]$/.test(tok.tag)) {
+        tok.tag = 'h' + Math.min(6, Number(tok.tag[1]) + 2);
+      }
+      // dir="auto" on every block element so RTL text lays out per-block.
+      if (tok.block && (tok.type.endsWith('_open') || tok.type === 'fence' || tok.type === 'code_block' || tok.type === 'hr')) {
+        tok.attrSet('dir', 'auto');
+      }
+    }
+  });
+  // No pretty-print newlines anywhere in the output: under pre-wrap they
+  // would render as extra lines. Newlines inside <pre><code> content are
+  // real code content and stay (renderToken output is a single tag, so
+  // stripping every \n from it is safe; fence/code_block below keep their
+  // content verbatim and just drop the decorative trailing \n).
+  const renderToken = md.renderer.renderToken.bind(md.renderer);
+  md.renderer.renderToken = (...args) => renderToken(...args).replace(/\n/g, '');
+  md.renderer.rules.hardbreak = () => '<br>';
+  md.renderer.rules.softbreak = () => '<br>';
+  md.renderer.rules.code_block = (tokens, idx, options, env, self) =>
+    `<pre${self.renderAttrs(tokens[idx])}><code>${md.utils.escapeHtml(tokens[idx].content)}</code></pre>`;
+  const renderLinkOpen = md.renderer.rules.link_open
+    || ((tokens, idx, options, env, self) => self.renderToken(tokens, idx, options));
+  md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+    const href = tokens[idx].attrGet('href');
+    if (href && tokens[idx].attrGet('data-weblink') === null) {
+      tokens[idx].attrSet('data-weblink', href);
+    }
+    return renderLinkOpen(tokens, idx, options, env, self);
+  };
+  md.renderer.rules.fence = (tokens, idx) => {
+    const tok = tokens[idx];
+    const lang = (tok.info || '').trim().split(/\s+/)[0] || '';
+    const code = md.utils.escapeHtml(tok.content);
+    const cls = lang ? ` class="language-${md.utils.escapeHtml(lang)}"` : '';
+    return `<pre dir="auto"><code${cls}>${code}</code></pre>`;
+  };
+  _md = md;
+  return _md;
+}
+
+function mdToHtml(src) {
+  const marked = markBlankLines((src || '').replace(/\uE000/g, ''));
+  return getMarkdownIt().render(marked)
+    .split(`<p dir="auto">${BLANK_LINE}</p>`).join(BLANK_LINE_P);
 }
 
 // One indent level for markdown bullet lists, in the note-body editor.
 const LIST_INDENT = '  ';
+const ORDERED_LIST_INDENT = '   ';
 
-// Pressing Enter inside the note body: continue / exit a markdown bullet list.
-// Pure: takes the textarea value + collapsed caret, returns a minimal edit
-// descriptor {start, end, text, caret} to apply (the handler runs it through
-// execCommand so native undo survives), or null to let the default newline fire.
+// Pressing Enter inside the note body: continue / exit a markdown bullet
+// list ("-" / "*"), ordered list ("1." / "1)" — the next item increments),
+// or blockquote ("> "). Pure: takes the textarea value + collapsed caret,
+// returns a minimal edit descriptor {start, end, text, caret} to apply (the
+// handler runs it through execCommand so native undo survives), or null to
+// let the default newline fire.
 function editListOnEnter(value, selStart, selEnd, shiftKey) {
   if (shiftKey) return null;            // Shift+Enter = plain newline escape hatch
   if (selStart !== selEnd) return null; // a spanning selection -> default
   const lineStart = value.lastIndexOf('\n', selStart - 1) + 1;
   let lineEnd = value.indexOf('\n', selStart);
   if (lineEnd === -1) lineEnd = value.length;
-  const m = value.slice(lineStart, lineEnd).match(/^(\s*)([-*])(\s+)(.*)$/);
-  if (!m) return null;                  // not a bullet line
+  const m = value.slice(lineStart, lineEnd).match(/^(\s*)([-*]|\d{1,9}[.)]|>)(\s+)(.*)$/);
+  if (!m) return null;                  // not a list / blockquote line
   const [, indent, marker, spaces, content] = m;
   // Caret sitting in the indent/marker (not yet in the content) -> default.
   if (selStart < lineStart + indent.length + marker.length + spaces.length) return null;
@@ -216,12 +234,20 @@ function editListOnEnter(value, selStart, selEnd, shiftKey) {
     // Empty item: drop the marker (and its indent) — this ends the list.
     return { start: lineStart, end: lineEnd, text: '', caret: lineStart };
   }
-  // Non-empty item: open a fresh item with the same indent + marker.
-  const text = `\n${indent}${marker} `;
+  // Non-empty item: open a fresh item with the same indent + marker
+  // (ordered markers increment: "3." continues as "4.").
+  const num = marker.match(/^(\d+)([.)])$/);
+  const next = num ? (Number(num[1]) + 1) + num[2] : marker;
+  const text = `\n${indent}${next} `;
   return { start: selStart, end: selStart, text, caret: selStart + text.length };
 }
 
-// Pressing Tab / Shift+Tab on a bullet line: indent / outdent one level.
+// Pressing Tab / Shift+Tab on a bullet or ordered-list line: indent / outdent
+// one level. Blockquote lines are deliberately excluded — 4+ leading spaces
+// would turn "> x" into an indented code block.
+// Indent width differs by marker: CommonMark nests a child list only when it
+// reaches the parent item's text column — 2 for "- ", 3 for "1. " — so a
+// 2-space step on an ordered line would render flat (same list, no nesting).
 // Same pure-edit-descriptor contract as editListOnEnter; null = default Tab.
 function editListOnTab(value, selStart, selEnd, outdent) {
   if (value.slice(selStart, selEnd).includes('\n')) return null; // multi-line selection -> default
@@ -229,14 +255,49 @@ function editListOnTab(value, selStart, selEnd, outdent) {
   let lineEnd = value.indexOf('\n', selStart);
   if (lineEnd === -1) lineEnd = value.length;
   const line = value.slice(lineStart, lineEnd);
-  if (!/^(\s*)[-*]\s+/.test(line)) return null; // only bullet lines indent
+  if (!/^\s*(?:[-*]|\d{1,9}[.)])\s+/.test(line)) return null; // only list lines indent
+  const ordered = line.match(/^(\s*)(\d{1,9})([.)])\s+/);
+  const step = ordered ? ORDERED_LIST_INDENT : LIST_INDENT;
   if (!outdent) {
-    return { start: lineStart, end: lineStart, text: LIST_INDENT, caret: selStart + LIST_INDENT.length };
+    // Indenting an ordered item that OPENS a new sublist must also renumber
+    // it to 1: a list interrupting a paragraph only counts when it starts
+    // with 1. (CommonMark), so an indented "2." would render as flat text.
+    // When the previous line already holds a sublist item at the target
+    // indent, the typed number is kept — ordered lists renumber themselves.
+    if (ordered) {
+      const [, lead, num] = ordered;
+      const prevEnd = lineStart - 1;
+      const prevStart = prevEnd < 0 ? 0 : value.lastIndexOf('\n', prevEnd - 1) + 1;
+      const prev = prevEnd < 0 ? '' : value.slice(prevStart, prevEnd);
+      const sibling = new RegExp('^' + lead + step + '\\d{1,9}[.)]\\s').test(prev);
+      if (!sibling) {
+        const end = lineStart + lead.length + num.length;
+        return { start: lineStart, end, text: lead + step + '1',
+          caret: Math.max(lineStart, selStart + step.length + 1 - num.length) };
+      }
+    }
+    return { start: lineStart, end: lineStart, text: step, caret: selStart + step.length };
   }
   const lead = line.match(/^[ \t]*/)[0];
   if (lead.length === 0) return null;           // nothing to outdent
-  const remove = lead[0] === '\t' ? 1 : Math.min(LIST_INDENT.length, lead.length);
+  const remove = lead[0] === '\t' ? 1 : Math.min(step.length, lead.length);
   return { start: lineStart, end: lineStart + remove, text: '', caret: Math.max(lineStart, selStart - remove) };
+}
+// Pasting multi-line text while the caret sits inside a blockquote line:
+// markdown quotes only lines that carry their own "> ", so a plain paste
+// would silently drop every pasted line after the first out of the quote.
+// Prefix each continuation line with the current line's quote prefix
+// (nested "> > " included). Single-line pastes and non-quote lines return
+// null — default paste. Same pure edit-descriptor contract as the others.
+function editQuoteOnPaste(value, selStart, selEnd, pasted) {
+  if (!pasted || !pasted.includes('\n')) return null;
+  const lineStart = value.lastIndexOf('\n', selStart - 1) + 1;
+  const m = value.slice(lineStart, selStart).match(/^((?:\s*>)+ ?)/);
+  if (!m) return null;
+  const prefix = m[1];
+  const text = pasted.replace(/\r\n?/g, '\n').split('\n')
+    .map((l, i) => i === 0 ? l : prefix + l).join('\n');
+  return { start: selStart, end: selEnd, text, caret: selStart + text.length };
 }
 // Pasting over a selection in the note body: if the clipboard is a single
 // http(s) URL, wrap the selection Slack-style as [selection](url) — or, when
@@ -599,4 +660,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

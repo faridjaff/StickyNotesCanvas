@@ -27,6 +27,10 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const code = fs.readFileSync(path.join(dir, '..', 'utils.jsx'), 'utf8');
 const sandbox = { React: {}, window: {}, document: {}, navigator: {}, console, Math, JSON, Date };
 vm.createContext(sandbox);
+// The converter is markdown-it now; evaluate the vendored UMD build first so
+// the sandbox has the `markdownit` global, exactly like the <script> tag in
+// index.html does in the browser (same pattern as markdown.test.mjs).
+vm.runInContext(fs.readFileSync(path.join(dir, '..', 'vendor', 'markdown-it.min.js'), 'utf8'), sandbox);
 vm.runInContext(code, sandbox);
 const { mdToHtml } = sandbox.window;
 
@@ -54,9 +58,14 @@ test('space runs survive inside emphasis and list items', () => {
 
 /* ---------------- mdToHtml: vertical whitespace ---------------- */
 
-test('adjacent lines become adjacent paragraphs (one line each)', () => {
+test('adjacent lines stay adjacent lines (one line each)', () => {
+  // Same user-visible lines as the old one-<p>-per-line renderer: with
+  // .md-body p { margin: 0 } a <br> inside one paragraph and two stacked
+  // paragraphs paint identically. markdown-it (breaks: true) uses the <br>
+  // form — per-line paragraphs can't exist under a CommonMark parser without
+  // breaking multi-line constructs (lists, tables, fences).
   assert.equal(mdToHtml('line one\nline two'),
-    '<p dir="auto">line one</p><p dir="auto">line two</p>');
+    '<p dir="auto">line one<br>line two</p>');
 });
 
 test('a blank line renders as exactly one empty line', () => {

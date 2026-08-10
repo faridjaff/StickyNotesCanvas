@@ -313,6 +313,13 @@ test('emphasis markers inside a fence stay literal', () => {
     '<pre dir="auto"><code>_a_ and **b**\n</code></pre>');
 });
 
+/* ---------------- mermaid fences (issue #31) ---------------- */
+
+test('a mermaid fence renders the marked <pre> NoteCard upgrades to a diagram', () => {
+  assert.equal(mdToHtml('```mermaid\ngraph TD;\nA-->B;\n```'),
+    '<pre class="mermaid-src" dir="auto"><code>graph TD;\nA--&gt;B;\n</code></pre>');
+});
+
 /* ---------------- tables ---------------- */
 
 test('a pipe table renders with dir="auto" on every block element', () => {

@@ -90,7 +90,9 @@ const SEED = {
  *   - every block-level tag carries dir="auto" so RTL lines lay out right.
  *   - headings shift down two levels (# → h3, ## → h4, ### → h5, #### and
  *     deeper → h6) so they stay note-sized.
- *   - fenced code renders <pre><code class="language-x">.
+ *   - ```mermaid fences emit <pre class="mermaid-src"> which NoteCard swaps
+ *     for the rendered diagram after mount (fails soft back to the code
+ *     block); other fences render <pre><code class="language-x">.
  *   - anchors carry data-weblink, which the note-body click delegate
  *     dispatches on to open links outside the app (see NoteCard).
  * Preview <-> edit parity (issue #26) is preserved across the swap — the
@@ -196,6 +198,9 @@ function getMarkdownIt() {
     const tok = tokens[idx];
     const lang = (tok.info || '').trim().split(/\s+/)[0] || '';
     const code = md.utils.escapeHtml(tok.content);
+    if (lang.toLowerCase() === 'mermaid') {
+      return `<pre class="mermaid-src" dir="auto"><code>${code}</code></pre>`;
+    }
     const cls = lang ? ` class="language-${md.utils.escapeHtml(lang)}"` : '';
     return `<pre dir="auto"><code${cls}>${code}</code></pre>`;
   };
@@ -207,6 +212,12 @@ function mdToHtml(src) {
   const marked = markBlankLines((src || '').replace(/\uE000/g, ''));
   return getMarkdownIt().render(marked)
     .split(`<p dir="auto">${BLANK_LINE}</p>`).join(BLANK_LINE_P);
+}
+
+// Mermaid renders on demand (NoteCard swaps marked fences after mount),
+// never on page load; 'strict' keeps diagram-label sanitizing on.
+if (typeof mermaid !== 'undefined') {
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
 }
 
 // One indent level for markdown bullet lists, in the note-body editor.

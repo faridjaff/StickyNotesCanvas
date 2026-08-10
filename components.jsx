@@ -152,7 +152,7 @@ The output has three sections, in order:
 Each note in the JSON has these fields:
   - "id":     short string unique within the payload (e.g. "n1","n2"); used only to wire links and is remapped on paste.
   - "title":  string. Short heading. If the note has no obvious title, infer one from its first line.
-  - "body":   string. Remaining content. Use "\\n" between lines. Markdown supported: # headings (all levels), - or * bullet lists, numbered lists, **bold**, *italic* or _italic_, \`inline code\`, fenced code blocks, blockquotes, tables, [links](url) and images (http/https only).
+  - "body":   string. Remaining content. Use "\\n" between lines. Markdown supported: # headings (all levels), - or * bullet lists, numbered lists, **bold**, *italic* or _italic_, \`inline code\`, fenced code blocks, blockquotes, tables, [links](url) and images (http/https only), \`\`\`mermaid diagrams.
   - "w":      integer pixel width. Use 260 by default; use ~300 for notes with wide/long lines.
   - "h":      integer pixel height. Use 180 by default; use 220–280 for notes with lots of text.
   - "pinned": false
@@ -1235,6 +1235,38 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   useEffect(() => { if (editingTitle) origTitleRef.current = note.title; }, [editingTitle]);
   useEffect(() => { if (editing)      origBodyRef.current  = note.body;  }, [editing]);
 
+  // Mermaid diagrams (issue #31): mdToHtml renders ```mermaid fences as
+  // <pre class="mermaid-src">; once the markdown HTML is in the DOM, swap
+  // each one for its SVG. Rendering is async and fails soft — on any error
+  // the fence simply stays visible as a code block, the note never crashes.
+  const mdBodyRef = useRef(null);
+  useEffect(() => {
+    if (editing) return;
+    const root = mdBodyRef.current;
+    if (!root || typeof mermaid === 'undefined') return;
+    const fences = root.querySelectorAll('pre.mermaid-src');
+    if (!fences.length) return;
+    let cancelled = false;
+    fences.forEach((pre, i) => {
+      const id = `mmd-${note.id}-${i}-${Date.now().toString(36)}`;
+      mermaid.render(id, pre.textContent).then(({ svg }) => {
+        if (cancelled || !pre.isConnected) return;
+        const fig = document.createElement('div');
+        fig.className = 'mermaid-diagram';
+        fig.innerHTML = svg;
+        pre.replaceWith(fig);
+      }).catch(() => {
+        // Parse/render failure: keep the code block. Mermaid can leave its
+        // scratch element behind on errors — clean both possible ids up.
+        for (const eid of [id, 'd' + id]) {
+          const orphan = document.getElementById(eid);
+          if (orphan && !root.contains(orphan)) orphan.remove();
+        }
+      });
+    });
+    return () => { cancelled = true; };
+  }, [editing, note.body]);
+
   // When the user clicks outside the note while editing, exit edit mode so
   // the cursor visibly goes away and further typing doesn't keep landing in
   // the note. The native blur event doesn't fire here because the desk's
@@ -1619,7 +1651,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               background:'transparent', color:'inherit', font:'inherit', lineHeight:'inherit'}}
           />
         ) : (
-          <div className="md-body" dir="auto" dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
+          <div className="md-body" dir="auto" ref={mdBodyRef} dangerouslySetInnerHTML={{__html: mdToHtml(note.body)}}
             onClick={(e)=>{
               // The mouseup that ends a text-selection drag arrives as a
               // click on whatever element the pointer was released over. If

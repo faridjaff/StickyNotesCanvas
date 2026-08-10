@@ -632,6 +632,8 @@ globalStyle.textContent = `
   .md-body th, .md-body td { border: 1px solid rgba(0,0,0,.2); padding: 2px 6px; }
   .md-body img { max-width: 100%; }
   .md-body hr { border: none; border-top: 1px solid rgba(0,0,0,.2); margin: 0; }
+  .md-body .mermaid-diagram { margin: 0; }
+  .md-body .mermaid-diagram svg { max-width: 100%; height: auto; }
   .md-body code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
   .md-body a.note-link { color: inherit; text-decoration: underline dotted; cursor: pointer; background: rgba(0,0,0,.05); padding: 0 3px; border-radius: 2px; }
   .md-body a.note-link:hover { background: rgba(0,0,0,.12); }

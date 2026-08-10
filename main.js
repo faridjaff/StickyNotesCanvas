@@ -207,6 +207,25 @@ ipcMain.handle('notes:export', async (_e, data) => {
   }
 });
 
+// Context-menu "Download": save one note's content as a markdown file. The
+// renderer supplies both the suggested filename (derived from the note's
+// title / first line, already sanitized) and the full file content.
+ipcMain.handle('notes:export-markdown', async (_e, payload) => {
+  const { filename, content } = payload || {};
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Download note',
+    defaultPath: typeof filename === 'string' && filename ? filename : 'note.md',
+    filters: [{ name: 'Markdown', extensions: ['md'] }],
+  });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(filePath, typeof content === 'string' ? content : '', 'utf8');
+    return { ok: true, path: filePath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('notes:import', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: 'Restore backup',

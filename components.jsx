@@ -715,27 +715,55 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
     }
   };
 
-  // Mobile-only: single-finger drag on the canvas background pans the view.
-  // Gated on narrow viewport (MOBILE_BANNER_MAX_WIDTH) so desktop browsers
-  // and Electron are entirely unaffected. Mirrors the "empty-canvas" target
-  // filter used by the mouse marquee branch so a touch that lands on a
-  // sticky note is passed through untouched (the note's own drag logic
+  // Touch gestures on the canvas. Two branches with different gates:
+  //
+  // 1-finger pan — mobile-only (narrow viewport, web demo) and only on the
+  // canvas background. Gated so desktop browsers and Electron are entirely
+  // unaffected: a single-finger touch on desktop must keep behaving like the
+  // synthesised mouse events (marquee, note taps). Mirrors the "empty-canvas"
+  // target filter used by the mouse marquee branch so a touch that lands on
+  // a sticky note is passed through untouched (the note's own drag logic
   // owns that gesture). Strictly additive to onMouseDown.
   //
-  // Two-finger pinch is handled in a parallel branch below. Pan and pinch
-  // are mutually exclusive: pan only starts on exactly 1 finger, pinch only
-  // starts on exactly 2. When pinch is active, the pan-touchmove effect
-  // short-circuits (panning is false), and vice versa.
+  // 2-finger pinch — works everywhere (Electron touchscreens, wide desktop
+  // browsers, and the narrow mobile demo alike; issue #17) but ONLY when
+  // BOTH fingers started on the desk background. Touches that begin on a
+  // sticky note belong to the note's pointer-driven drag machinery (#18):
+  // a finger per header on two different notes drags both notes at once,
+  // and a second finger landing on empty canvas mid-drag ends that drag in
+  // place (startPointerDrag's pointerdown listener) — in neither case may
+  // the pinch hijack the gesture, so mere touches.length === 2 is not
+  // enough to engage it. Touch.target is the element each touch STARTED
+  // on (it never retargets mid-gesture), which is exactly the gate we
+  // need. Editable text fields also opt out, matching onWheel, so a pinch
+  // landing in an open editor doesn't fight text selection/scroll.
+  //
+  // Pan and pinch are mutually exclusive: pan only starts on exactly 1
+  // finger, pinch only starts on exactly 2. When pinch is active, the
+  // pan-touchmove effect short-circuits (panning is false), and vice versa.
   const onTouchStart = (e) => {
-    if (!narrow) return;
-    if (!(e.target.id==='desk' || e.target.id==='desk-inner' || e.target.id==='desk-grid')) return;
     if (e.touches.length === 1) {
+      if (!narrow) return;
+      if (!(e.target.id==='desk' || e.target.id==='desk-inner' || e.target.id==='desk-grid')) return;
       const t = e.touches[0];
       setPanning(true);
       panRef.current = { sx: t.clientX, sy: t.clientY, vx: view.x, vy: view.y };
       return;
     }
     if (e.touches.length === 2) {
+      if (activePointerDrags > 0) return; // a note is being dragged — never zoom under it
+      // Desk background = not inside any sticky note (headers, footers and
+      // resize corners are drag handles; the body is a text-selection
+      // surface) and not an editable field. Anything else under the desk —
+      // the grid, the link layer — is fair game for a pinch.
+      const onDeskBackground = (t) => {
+        const el = t.target;
+        if (!el || typeof el.closest !== 'function') return false;
+        if (el.closest('[data-note]')) return false;
+        if (el.matches?.('textarea, input, [contenteditable="true"]')) return false;
+        return true;
+      };
+      if (!onDeskBackground(e.touches[0]) || !onDeskBackground(e.touches[1])) return;
       const t0 = e.touches[0], t1 = e.touches[1];
       const dx = t1.clientX - t0.clientX;
       const dy = t1.clientY - t0.clientY;
@@ -796,7 +824,7 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
     };
   }, [panning]);
 
-  // Mobile-only: two-finger pinch-to-zoom on the canvas. Mirrors the pan
+  // Two-finger pinch-to-zoom on the canvas (all platforms). Mirrors the pan
   // effect's structure (window-scoped {passive:false} listeners for the
   // duration of the gesture) but operates on pinchRef instead of panRef.
   // Zoom is anchored at the pinch midpoint so the world point beneath the
@@ -844,6 +872,56 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
       window.removeEventListener('touchcancel', end);
     };
   }, [pinching]);
+
+  // Safari-only trackpad pinch (web demo). Chromium and Firefox synthesise
+  // Ctrl+wheel events for trackpad pinch, which onWheel already handles —
+  // but Safari fires its non-standard gesturestart/gesturechange/gestureend
+  // events instead, so without this the demo can't pinch-zoom in Safari at
+  // all. Gated on GestureEvent existing (WebKit-only) so other engines never
+  // attach the listeners and can't double-zoom. Applied incrementally
+  // (e.scale ratio between successive events, via the setView functional
+  // form) so the effect needs no view deps and can attach once. On iPad,
+  // Safari fires BOTH touch events and gesture events for the same pinch;
+  // the touch-pinch handler above wins there (it sets pinchRef on
+  // touchstart, before gesturestart), and this handler stands down while
+  // pinchRef is set so the gesture isn't applied twice.
+  useEffect(() => {
+    if (typeof window.GestureEvent === 'undefined') return;
+    const desk = deskRef.current;
+    if (!desk) return;
+    let lastScale = 1;
+    const start = (e) => {
+      e.preventDefault(); // suppress Safari's own page zoom over the canvas
+      lastScale = e.scale;
+    };
+    const change = (e) => {
+      e.preventDefault();
+      if (pinchRef.current) return;
+      if (activePointerDrags > 0) return; // a note is being dragged — never zoom under it
+      if (e.target.closest?.('[data-note]')) return;
+      if (e.target.matches?.('textarea, input, [contenteditable="true"]')) return;
+      const factor = e.scale / lastScale;
+      lastScale = e.scale;
+      const rect = desk.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      // Same clamp range and cursor-anchored formula as onWheel.
+      setView(v => {
+        const nz = Math.max(0.25, Math.min(3, v.z * factor));
+        const ratio = nz / v.z;
+        return { x: mx - (mx - v.x) * ratio, y: my - (my - v.y) * ratio, z: nz };
+      });
+    };
+    const end = (e) => e.preventDefault();
+    desk.addEventListener('gesturestart', start);
+    desk.addEventListener('gesturechange', change);
+    desk.addEventListener('gestureend', end);
+    return () => {
+      desk.removeEventListener('gesturestart', start);
+      desk.removeEventListener('gesturechange', change);
+      desk.removeEventListener('gestureend', end);
+    };
+  }, []);
 
   // Marquee drag: while active, track pointer in world coords; on release, resolve selection.
   useEffect(() => {
@@ -1004,7 +1082,15 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
         // with the `view` transform, which breaks fit / pan / PageDown.
         // `overflow:clip` is not a scroll container, so scrollTop is pinned
         // to 0 and no focus/keyboard gesture can ever desync the canvas.
-        overflow:'clip', cursor, userSelect: panning?'none':'auto', touchAction: narrow?'none':undefined}}>
+        // touch-action: mobile demo disables all browser touch gestures on
+        // the desk ('none' — the app owns pan and pinch there). Wide
+        // viewports keep pan-x/pan-y so touch-scrolling a long note body
+        // still works, but drop the browser's own pinch-zoom: our two-finger
+        // pinch handler attaches its {passive:false} touchmove listener one
+        // React commit AFTER touchstart, and without this declaration the
+        // browser could commit to its native pinch in that gap, making the
+        // gesture's touchmoves non-cancelable and the canvas zoom janky.
+        overflow:'clip', cursor, userSelect: panning?'none':'auto', touchAction: narrow?'none':'pan-x pan-y'}}>
 
       {/* faint grid — lives in screen space, scales with zoom */}
       <div id="desk-grid" style={{
@@ -1232,10 +1318,18 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 // A second touch joining mid-drag ends the drag at its current position:
 // two fingers mean canvas pinch-zoom, not note dragging, and without this
 // the note would keep chasing finger 1 while the canvas zooms.
+// Live count of note drag/resize sessions. The zoom paths consult it:
+// while ANY note is being dragged the canvas must never zoom — WebKit fires
+// its gesture events on the fingers' common ANCESTOR (the desk itself when
+// one finger rides each of two notes), so target-based gating cannot see
+// multi-note drags. This invariant can.
+let activePointerDrags = 0;
 function startPointerDrag(e, onMove, onEnd) {
   const pid = e.pointerId, isTouch = e.pointerType === 'touch';
   let raf = 0, last = e;
+  activePointerDrags += 1;
   const finish = (ev) => {
+    activePointerDrags = Math.max(0, activePointerDrags - 1);
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', end);
     window.removeEventListener('pointercancel', end);

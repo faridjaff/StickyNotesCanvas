@@ -1,7 +1,11 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, net, protocol, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const { load: loadNotes, save: saveNotes } = require('./storage.js');
+const { pathToFileURL } = require('node:url');
+const {
+  load: loadNotes, save: saveNotes,
+  saveImage, sweepOrphanImages, IMAGE_FILE_RE,
+} = require('./storage.js');
 
 // E2E test hook: when STICKY_USER_DATA is set, store all app data (notes.json,
 // window.json, the Chromium profile) under that directory instead of the real
@@ -28,6 +32,7 @@ ipcMain.handle('shell:open-external', async (_e, url) => {
 const userDataDir = () => app.getPath('userData');
 const notesPath   = () => path.join(userDataDir(), 'notes.json');
 const windowPath  = () => path.join(userDataDir(), 'window.json');
+const imagesDir   = () => path.join(userDataDir(), 'images');
 
 // One-time migration: until v1.2.3 the package was named "sticky-notes" and
 // userData lived at ~/.config/sticky-notes/. v1.3.0 renamed the package to
@@ -201,6 +206,21 @@ ipcMain.handle('notes:save', async (_e, data) => {
   }
 });
 
+// A picture pasted into a note body: the renderer sends the raw bytes +
+// mime type, storage.js writes them content-hashed under userData/images/,
+// and the resolved sticky-image:// reference goes back into the markdown.
+ipcMain.handle('images:save', async (_e, bytes, mime) => {
+  if (!(bytes instanceof Uint8Array) || bytes.length === 0) {
+    return { ok: false, error: 'invalid image data' };
+  }
+  try {
+    const name = saveImage(imagesDir(), Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime);
+    return { ok: true, ref: `sticky-image://${name}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('notes:export', async (_e, data) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: 'Save backup',
@@ -253,6 +273,30 @@ ipcMain.handle('notes:import', async () => {
 app.whenReady().then(() => {
   // Run any one-time migrations before anything reads notes.json.
   migrateLegacyUserData();
+
+  // Serve pasted note images over the app-private sticky-image:// scheme.
+  // mdToHtml only emits <img> tags for this exact reference shape, and this
+  // handler only serves hash-named files out of userData/images/ — no path
+  // traversal, no arbitrary file reads reachable from note content.
+  protocol.handle('sticky-image', (request) => {
+    let name = '';
+    try { name = new URL(request.url).hostname; } catch {}
+    const file = path.join(imagesDir(), name);
+    if (!IMAGE_FILE_RE.test(name) || !fs.existsSync(file)) {
+      return new Response('not found', { status: 404 });
+    }
+    return net.fetch(pathToFileURL(file).toString());
+  });
+
+  // Deleting a note (or undoing an image paste) leaves its image files
+  // behind; sweep them now, before any renderer exists — the only moment
+  // an image can't be mid-paste.
+  try {
+    const removed = sweepOrphanImages(imagesDir(), notesPath());
+    if (removed.length) console.log(`[main] removed ${removed.length} orphan image(s)`);
+  } catch (err) {
+    console.warn('[main] orphan image sweep failed:', err.message);
+  }
 
   // On macOS in dev mode (`npm start`), Electron shows its default icon in the
   // dock because there's no .app bundle with an Info.plist. Packaged .dmg builds

@@ -115,12 +115,22 @@ function defaultSeed() {
   };
 }
 
-/* ---------- launch ---------- */
-export async function launch({ seed = defaultSeed() } = {}) {
+/* ---------- launch ----------
+ * `files` seeds extra files into the temp userData dir before the app
+ * starts (relative path -> Buffer/string), e.g. images/<hash>.png for the
+ * sticky-image:// protocol tests — anything the app expects to find on disk
+ * at startup, alongside notes.json.
+ */
+export async function launch({ seed = defaultSeed(), files = {} } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'sticky-e2e-'));
   fs.writeFileSync(path.join(userData, 'notes.json'), JSON.stringify(seed, null, 2));
   // Force a known window size so seeded positions are on-screen.
   fs.writeFileSync(path.join(userData, 'window.json'), JSON.stringify({ x: 0, y: 0, width: 1400, height: 900 }));
+  for (const [rel, data] of Object.entries(files)) {
+    const abs = path.join(userData, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, data);
+  }
 
   const port = await freePort();
   // detached:true puts Electron in its own process group so close() can kill

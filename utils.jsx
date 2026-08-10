@@ -85,7 +85,8 @@ const SEED = {
  *   - breaks:true  — a single newline stays a visible line break, matching
  *                    how people write notes (the old renderer emitted one
  *                    block per line).
- *   - validateLink restricts link/image targets to http(s) only, so
+ *   - validateLink restricts link/image targets to http(s) — plus the app's
+ *     own strict sticky-image:// references (IMAGE_REF_RE below) — so
  *     javascript:, data:, file: etc. can never become clickable/fetchable.
  *   - every block-level tag carries dir="auto" so RTL lines lay out right.
  *   - headings shift down two levels (# → h3, ## → h4, ### → h5, #### and
@@ -115,6 +116,17 @@ const SEED = {
 // meaningful in note text; stripped from input first so it can't be forged).
 const BLANK_LINE = '\uE000';
 const BLANK_LINE_P = '<p dir="auto"><br></p>';
+
+// The only non-http(s) URL shape validateLink accepts \u2014 a picture the app
+// itself stored on paste (#25): content-hash filename under userData/images/,
+// served by main.js over the app-private sticky-image:// protocol, embedded
+// in note markdown as ![](sticky-image://<hash>.<ext>). Exact match only:
+// uppercase hex, other extensions, traversal shapes, or anything smuggled
+// after the filename all fail, and markdown-it then drops the whole
+// link/image construct back to literal text (same path as javascript:).
+// main.js (protocol handler) and storage.js (IMAGE_FILE_RE) enforce the
+// same shape on the serving side.
+const IMAGE_REF_RE = /^sticky-image:\/\/[0-9a-f]{16}\.(?:png|jpg|gif|webp)$/;
 
 // Pre-pass: replace each blank (or whitespace-only) source line outside a
 // code fence with a sentinel paragraph of its own, padded with real blank
@@ -152,7 +164,11 @@ function getMarkdownIt() {
   // block. Fenced ``` blocks and inline [text](url) links cover both
   // needs without the surprises.
   md.disable(['reference', 'code']);
-  md.validateLink = url => /^https?:\/\//i.test(url);
+  // http(s) for the web, plus the app's own pasted-image references. Note
+  // validateLink is shared by links and images, so [text](sticky-image://…)
+  // also parses as an anchor — inert by design: openWebLink and the main
+  // process's shell:open-external both re-check http(s) before opening.
+  md.validateLink = url => /^https?:\/\//i.test(url) || IMAGE_REF_RE.test(url);
   // Restore the leading/trailing spaces markdown-it trims off plain
   // paragraph lines (issue #26: the textarea shows them, so the preview
   // must too — .md-body's pre-wrap then renders them verbatim). Runs after

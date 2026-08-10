@@ -1607,13 +1607,38 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             onChange={e=>onChange({body:e.target.value})}
             onBlur={()=>setEditing(false)}
             onPaste={e=>{
+              const ta = e.target;
+              // Pasted picture (screenshot / copied image): hand the bytes
+              // to the main process, which stores them content-hashed under
+              // userData/images/ and returns a sticky-image:// reference
+              // that mdToHtml renders as an <img>. Insertion goes through
+              // execCommand so native undo keeps working. Electron-only:
+              // the web demo has no stickyAPI, so image pastes fall through
+              // to the default (inert for files) paste there.
+              const items = e.clipboardData ? Array.from(e.clipboardData.items || []) : [];
+              const imgItem = items.find(it => it.kind === 'file' && /^image\//.test(it.type));
+              if (imgItem && window.stickyAPI && window.stickyAPI.saveImage) {
+                e.preventDefault();
+                const file = imgItem.getAsFile();
+                if (!file) return;
+                const start = ta.selectionStart, end = ta.selectionEnd;
+                file.arrayBuffer()
+                  .then(buf => window.stickyAPI.saveImage(new Uint8Array(buf), file.type))
+                  .then(res => {
+                    if (!res || !res.ok) { console.warn('[paste-image]', res && res.error); return; }
+                    ta.focus();
+                    ta.setSelectionRange(start, end);
+                    document.execCommand('insertText', false, `![](${res.ref})`);
+                  })
+                  .catch(err => console.warn('[paste-image]', err));
+                return;
+              }
               // Slack-style: pasting a URL over selected text wraps the
               // selection as [selection](url); pasting multi-line text on a
               // blockquote line spreads the "> " prefix over every pasted
               // line. Same execCommand contract as the Enter/Tab list edits
               // below (native undo + React onChange keep working); null from
               // both means fall through to the default paste.
-              const ta = e.target;
               const pasted = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
               const edit = editLinkOnPaste(ta.value, ta.selectionStart, ta.selectionEnd, pasted)
                 || editQuoteOnPaste(ta.value, ta.selectionStart, ta.selectionEnd, pasted);

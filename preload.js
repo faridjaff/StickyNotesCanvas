@@ -8,6 +8,10 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   // Context-menu "Download": save a single note as a markdown file via the
   // OS save dialog. payload = { filename, content }.
   exportMarkdown: (payload) => ipcRenderer.invoke('notes:export-markdown', payload),
+  // Store a pasted picture (raw bytes + mime type) under userData/images/.
+  // Resolves { ok, ref } where ref is the sticky-image:// URL that note
+  // markdown embeds as ![](ref) and mdToHtml renders as an <img>.
+  saveImage: (bytes, mime) => ipcRenderer.invoke('images:save', bytes, mime),
 
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.

@@ -282,13 +282,60 @@ function firstStrongDir(text = '') {
   return 'ltr';
 }
 /* ---------- Browser-side file helpers (used when window.stickyAPI is absent) ---------- */
-function downloadJSON(filename, obj) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+}
+
+function downloadJSON(filename, obj) {
+  downloadBlob(filename, new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }));
+}
+
+/* ---------- Download a note as markdown (context-menu "Download") ---------- */
+
+// Filesystem-safe .md filename for a note: the title, or (when the title is
+// blank or sanitizes away to nothing) the first non-empty body line with any
+// leading heading/bullet marker dropped, or "note" as the last resort.
+// Pure so it's unit-testable.
+function noteDownloadFilename(note) {
+  const clean = (s) => (s || '')
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')  // fs-hostile chars (Windows superset)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+    .replace(/^\.+/, '')     // no dotfiles
+    .replace(/[. ]+$/, '');  // Windows forbids trailing dots/spaces
+  const firstLine = ((note && note.body) || '')
+    .split('\n').map(l => l.trim()).find(l => l !== '') || '';
+  const base = clean((note && note.title) || '')
+    || clean(firstLine.replace(/^(?:#{1,6}|[-*])\s+/, ''))
+    || 'note';
+  return base + '.md';
+}
+
+// Markdown file content for a note: the body verbatim — note bodies ARE
+// markdown. The title lives in the filename only, so pasting the file's
+// contents into a new note reproduces the body exactly. Always ends in
+// exactly one newline.
+function noteToMarkdown(note) {
+  const body = ((note && note.body) || '').replace(/\s+$/, '');
+  return body + '\n';
+}
+
+// Save a single note as a .md file: native save dialog under Electron (the
+// notes:export-markdown IPC), Blob anchor download in the web demo — same
+// degradation pattern as openWebLink / the JSON backup helpers above.
+function downloadNoteAsMarkdown(note) {
+  const filename = noteDownloadFilename(note);
+  const content  = noteToMarkdown(note);
+  if (window.stickyAPI && window.stickyAPI.exportMarkdown) {
+    window.stickyAPI.exportMarkdown({ filename, content }).catch(err => console.warn('[download]', err));
+  } else {
+    downloadBlob(filename, new Blob([content], { type: 'text/markdown' }));
+  }
 }
 
 function pickJSONFile() {
@@ -536,4 +583,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, mdToHtml, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

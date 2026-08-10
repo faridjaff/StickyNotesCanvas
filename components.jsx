@@ -1598,6 +1598,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             {label: (selected && selectedIds && selectedIds.size > 1)
               ? 'Copy ' + selectedIds.size + ' notes'
               : 'Copy', onClick: () => onCopy && onCopy()},
+            {label:'Download', onClick:()=>downloadNoteAsMarkdown(note)},
             {divider:true},
             {label:'Edit title', onClick:()=>setEditingTitle(true)},
             {label:'Edit body', onClick:()=>setEditing(true)},

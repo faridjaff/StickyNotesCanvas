@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   save:       (data) => ipcRenderer.invoke('notes:save', data),
   exportFile: (data) => ipcRenderer.invoke('notes:export', data),
   importFile: () => ipcRenderer.invoke('notes:import'),
+  // Context-menu "Download": save a single note as a markdown file via the
+  // OS save dialog. payload = { filename, content }.
+  exportMarkdown: (payload) => ipcRenderer.invoke('notes:export-markdown', payload),
 
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.

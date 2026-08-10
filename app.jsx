@@ -606,11 +606,19 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
 /* ==================================================================== */
 const globalStyle = document.createElement('style');
 globalStyle.textContent = `
-  .md-body h3 { font-size: 1.05em; margin: 0 0 4px; font-weight: 700; }
-  .md-body h4 { font-size: 1em; margin: 8px 0 2px; font-weight: 700; opacity: .85; }
-  .md-body p { margin: 0 0 6px; }
-  .md-body ul { margin: 0 0 6px; padding-left: 18px; }
-  .md-body li { margin: 1px 0; }
+  /* Preview <-> edit parity (issue #26): outside edit mode the rendered body
+     must occupy the same lines as the raw text in the editing textarea.
+     pre-wrap stops HTML from collapsing space runs / leading spaces;
+     overflow-wrap matches the textarea's UA break-word; zeroed block margins
+     make consecutive lines stack purely at line-height, so all vertical
+     rhythm comes from the text itself (blank lines arrive from mdToHtml as
+     explicit empty paragraphs). */
+  .md-body { white-space: pre-wrap; overflow-wrap: break-word; }
+  .md-body h3 { font-size: 1.05em; margin: 0; font-weight: 700; }
+  .md-body h4 { font-size: 1em; margin: 0; font-weight: 700; opacity: .85; }
+  .md-body p { margin: 0; }
+  .md-body ul { margin: 0; padding-left: 18px; }
+  .md-body li { margin: 0; }
   .md-body code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: .88em; background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
   .md-body a.note-link { color: inherit; text-decoration: underline dotted; cursor: pointer; background: rgba(0,0,0,.05); padding: 0 3px; border-radius: 2px; }
   .md-body a.note-link:hover { background: rgba(0,0,0,.12); }

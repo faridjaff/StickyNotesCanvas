@@ -182,7 +182,11 @@ function mdToHtml(src) {
       items.push({ depth, html: inline(bm[2]) });
       continue;
     }
-    if (ln.trim() === '') { flush(); continue; }
+    // A blank (or whitespace-only) line occupies exactly one line in the
+    // editing textarea, so the preview must render one empty line too
+    // (issue #26). The <br> guarantees the paragraph keeps a line box even
+    // with the zeroed margins in the .md-body CSS.
+    if (ln.trim() === '') { flush(); out += '<p dir="auto"><br></p>'; continue; }
     flush();
     out += `<p dir="auto">${inline(ln)}</p>`;
   }

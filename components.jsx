@@ -1438,10 +1438,14 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               if (e.key==='Enter')  { setEditingTitle(false); }
               if (e.key==='Escape') { onChange({title:origTitleRef.current}); setEditingTitle(false); }
             }}
-            style={{flex:1, background:'transparent', border:'none', outline:'none', font:'inherit', color:'inherit', fontWeight:600, fontSize:12*fontScale}}
+            style={{flex:1, background:'transparent', border:'none', outline:'none', font:'inherit', color:'inherit', fontWeight:600, fontSize:12*fontScale,
+              // parity with the title display div (issue #26): no UA input padding
+              padding:0, margin:0}}
           />
         ) : (
-          <div dir="auto" style={{flex:1, fontWeight:600, fontSize:12*fontScale, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+          /* whiteSpace 'pre' (not 'nowrap') so space runs in the title render
+             exactly as typed in the title input (issue #26). */
+          <div dir="auto" style={{flex:1, fontWeight:600, fontSize:12*fontScale, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'pre'}}>
             {note.title || <span style={{opacity:.4}}>Untitled</span>}
           </div>
         )}
@@ -1606,6 +1610,10 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               }
             }}
             style={{width:'100%', height:'100%', resize:'none', border:'none', outline:'none',
+              // padding:0 kills the UA textarea padding (2px in Chromium) so
+              // the raw text sits exactly where the rendered preview draws it
+              // (issue #26 — preview identical to edit mode).
+              padding:0, margin:0,
               background:'transparent', color:'inherit', font:'inherit', lineHeight:'inherit'}}
           />
         ) : (

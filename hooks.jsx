@@ -199,19 +199,23 @@ function useStickyStore(onImportRequest) {
 }
 function useTweakMode(setState) {
   const [active, setActive] = useState(false);
+  const parentOriginRef = useRef('*');
   useEffect(() => {
     function onMsg(e) {
       if (!e.data) return;
+      if (e.data.type === '__activate_edit_mode' || e.data.type === '__deactivate_edit_mode') {
+        if (e.origin && e.origin !== 'null') parentOriginRef.current = e.origin;
+      }
       if (e.data.type === '__activate_edit_mode') setActive(true);
       if (e.data.type === '__deactivate_edit_mode') setActive(false);
     }
     window.addEventListener('message', onMsg);
-    window.parent.postMessage({type:'__edit_mode_available'}, '*');
+    window.parent.postMessage({type:'__edit_mode_available'}, window.location.origin || '*');
     return () => window.removeEventListener('message', onMsg);
   }, []);
   const update = (patch) => {
     setState(s => ({ ...s, ...patch }));
-    window.parent.postMessage({type:'__edit_mode_set_keys', edits: patch}, '*');
+    window.parent.postMessage({type:'__edit_mode_set_keys', edits: patch}, parentOriginRef.current);
   };
   return [active, update];
 }
@@ -252,7 +256,7 @@ function useUpdateCheck() {
       const json = await res.json();
       try { localStorage.setItem('stickies.lastUpdateCheck', String(Date.now())); } catch {}
       const tag = (json.tag_name || '').replace(/^v/, '');
-      if (!tag) {
+      if (!tag || !/^\d+\.\d+\.\d+(\.\d+)?$/.test(tag)) {
         if (force) setInfo({title:'Check for Updates', message:"Couldn't check for updates", detail:"The release feed didn't return a version tag."});
         return;
       }

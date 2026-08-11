@@ -1376,6 +1376,19 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   useEffect(() => { if (editingTitle) origTitleRef.current = note.title; }, [editingTitle]);
   useEffect(() => { if (editing)      origBodyRef.current  = note.body;  }, [editing]);
 
+  // One undo step per editing session. Typing used to record nothing at
+  // all, so Ctrl+Z reached back to whatever was snapshotted before the
+  // session — creating a note, say — and swallowed that note along with
+  // everything typed since. The snapshot is taken on the first keystroke,
+  // not when the editor opens, so merely looking at a note costs nothing.
+  const editDirtyRef = useRef(false);
+  useEffect(() => { editDirtyRef.current = false; }, [editing, editingTitle]);
+  const snapshotOnce = () => {
+    if (editDirtyRef.current) return;
+    editDirtyRef.current = true;
+    onSnapshot && onSnapshot();
+  };
+
   /* ---------- Pictures from a FILE: drag-and-drop and "Insert image…" ----------
    * Pasting a picture already works (the textarea's onPaste, which hands the
    * clipboard to the main process). These two routes cover the other way
@@ -1748,7 +1761,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           <div style={{flex:1}}/>
         ) : editingTitle ? (
           <input autoFocus value={note.title} dir="auto"
-            onChange={e=>onChange({title:e.target.value})}
+            onChange={e=>{ snapshotOnce(); onChange({title:e.target.value}); }}
             onBlur={()=>setEditingTitle(false)}
             onKeyDown={e=>{
               if (e.key==='Enter' && (e.ctrlKey || e.metaKey)) { e.target.blur(); return; }
@@ -1889,7 +1902,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         }}>
         {editing ? (
           <textarea autoFocus value={note.body} dir="auto"
-            onChange={e=>{ rememberCaret(e); onChange({body:e.target.value}); }}
+            onChange={e=>{ snapshotOnce(); rememberCaret(e); onChange({body:e.target.value}); }}
             onSelect={rememberCaret}
             onKeyUp={rememberCaret}
             onClick={rememberCaret}

@@ -67,3 +67,33 @@ test('the typed body survives leaving edit mode: preview renders a nested ol and
   assert.equal(dom.nestedOl, true, 'the renumber-to-1 indented item renders as a nested <ol>');
   assert.equal(dom.blockquote, true, 'the "> " lines render as a <blockquote>');
 });
+
+// Undo used to reach past an editing session: typing recorded no snapshot,
+// so Ctrl+Z rewound to the last create/delete and took unrelated notes with
+// it. Each session is now its own step.
+test('undo after typing reverts only that typing, leaving other notes alone', async () => {
+  const before = await app.evaljs(`document.querySelectorAll('[data-note-id]').length`);
+  const box = await app.noteBodyRect(NOTE.plain);
+  await app.dblclick(box.left + 20, box.top + 12);
+  await app.pollUntil(() => app.evaljs(`!!document.querySelector('[data-note-id="${NOTE.plain}"] textarea')`),
+    { timeout: 5000, label: 'editor to open' });
+  await app.type(' EXTRA');
+  await app.pollUntil(() => app.evaljs(`(document.querySelector('[data-note-id="${NOTE.plain}"] textarea')||{}).value?.includes('EXTRA')`),
+    { timeout: 5000, label: 'typed text' });
+
+  // Leave the editor so the app-level undo handler runs (a focused textarea
+  // deliberately keeps native undo instead).
+  await app.click(5, 5);
+  await app.pollUntil(() => app.evaljs(`!document.querySelector('[data-note-id="${NOTE.plain}"] textarea')`),
+    { timeout: 5000, label: 'editor to close' });
+  await app.cmd('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers: 2, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90 });
+  await app.cmd('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 2, key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, nativeVirtualKeyCode: 90 });
+
+  await app.pollUntil(async () => {
+    const html = await app.evaljs(`(document.querySelector('[data-note-id="${NOTE.plain}"] .md-body')||{}).textContent || ''`);
+    return html.includes('EXTRA') ? null : true;
+  }, { timeout: 5000, label: 'the typing to be undone' });
+
+  const after = await app.evaljs(`document.querySelectorAll('[data-note-id]').length`);
+  assert.equal(after, before, 'undo must not remove other notes');
+});

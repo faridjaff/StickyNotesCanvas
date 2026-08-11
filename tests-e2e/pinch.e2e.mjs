@@ -1,7 +1,9 @@
-// Pinch-to-zoom gesture arbitration (issue #17), driven with real CDP touch
-// input (Input.dispatchTouchEvent — Blink turns them into pointer events with
-// pointerType 'touch', same as a finger on a touchscreen). The spec, from
-// real-iPhone testing:
+// Canvas zoom: pinch gesture arbitration (issue #17) and the keyboard zoom
+// chords (issue #45), which share one clamp and one anchored-zoom formula.
+//
+// Pinch is driven with real CDP touch input (Input.dispatchTouchEvent — Blink
+// turns them into pointer events with pointerType 'touch', same as a finger on
+// a touchscreen). The spec, from real-iPhone testing:
 //   - two fingers starting on EMPTY canvas → midpoint-anchored pinch-zoom;
 //   - one finger per header on two DIFFERENT notes → both notes drag
 //     simultaneously (#18's per-pointer drags), zoom untouched;
@@ -33,6 +35,12 @@ const touch = (type, points) => app.cmd('Input.dispatchTouchEvent', {
 const deskZoom = () => app.evaljs(`(() => {
   const m = /scale\\(([\\d.]+)\\)/.exec(document.getElementById('desk-inner').style.transform);
   return m ? Number(m[1]) : null;
+})()`);
+
+// The pan half of the same transform: translate(Xpx, Ypx).
+const deskPan = () => app.evaljs(`(() => {
+  const m = /translate\\((-?[\\d.]+)px, *(-?[\\d.]+)px\\)/.exec(document.getElementById('desk-inner').style.transform);
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
 })()`);
 
 // World position straight off the note root's style — left/top ARE note.x/y,
@@ -202,4 +210,107 @@ test('pinching two fingers together decreases the zoom', async () => {
     'notes must be untouched by background pinches');
   assert.deepEqual(await selectedIdList(), selectionBeforePinches,
     'selection must be untouched by background pinches');
+});
+
+/* ==================================================================== */
+/* Keyboard zoom chords (issue #45)                                      */
+/* ==================================================================== */
+
+// Ctrl+<key> as a real key event pair. modifiers:2 is Ctrl; the virtual key
+// codes are the ones a physical keyboard sends, so Blink fills in e.key /
+// e.code exactly as it would for a user (verified over CDP: the renderer
+// receives '='/Equal and '+'/NumpadAdd with ctrlKey true).
+const CHORDS = {
+  equal:    { key: '=', code: 'Equal',    vk: 187 },
+  minus:    { key: '-', code: 'Minus',    vk: 189 },
+  zero:     { key: '0', code: 'Digit0',   vk: 48 },
+  numpadAdd:{ key: '+', code: 'NumpadAdd', vk: 107 },
+};
+const ctrl = async (name) => {
+  const k = CHORDS[name];
+  const base = { modifiers: 2, key: k.key, code: k.code, windowsVirtualKeyCode: k.vk, nativeVirtualKeyCode: k.vk };
+  await app.cmd('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+  await app.cmd('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+};
+
+// Full "Reset view" (x, y AND z) via the zoom-bar button, so each keyboard
+// test starts from the seeded {0,0,1} regardless of what ran before it.
+const resetViewButton = async () => {
+  await app.evaljs(`([...document.querySelectorAll('button')]
+    .find(b => (b.title || '').startsWith('Reset view')).click(), 1)`);
+  await app.pollUntil(async () => (await deskZoom()) === 1 && (await deskPan()).x === 0,
+    { timeout: 3000, interval: 50, label: 'the reset-view button to restore {0,0,1}' });
+};
+
+test('Ctrl+= zooms the canvas in, Ctrl+- zooms it back out', async () => {
+  await resetViewButton();
+  const dpr0 = await app.evaljs('window.devicePixelRatio');
+
+  await ctrl('equal');
+  await app.pollUntil(async () => (await deskZoom()) > 1.15,
+    { timeout: 3000, interval: 50, label: 'Ctrl+= to zoom the canvas in (one 1.2 step)' });
+  // The numpad + is the same action on a layout where it is the only plus.
+  await ctrl('numpadAdd');
+  await app.pollUntil(async () => (await deskZoom()) > 1.4,
+    { timeout: 3000, interval: 50, label: 'Ctrl+NumpadAdd to zoom in again' });
+
+  await ctrl('minus');
+  await ctrl('minus');
+  await ctrl('minus');
+  await app.pollUntil(async () => (await deskZoom()) < 1,
+    { timeout: 3000, interval: 50, label: 'Ctrl+- to zoom the canvas back out past 100%' });
+
+  // The chords must move the APP's zoom only. If Electron's page zoom were
+  // also firing, devicePixelRatio would have stepped with it.
+  assert.equal(await app.evaljs('window.devicePixelRatio'), dpr0,
+    'keyboard zoom must not move the host page zoom as well');
+});
+
+test('Ctrl+0 returns the canvas to 100% and leaves the pan where it was', async () => {
+  await resetViewButton();
+  // Zoom in OFF-CENTRE with Ctrl+wheel, so the pan is genuinely away from the
+  // origin and a reset that also recentred would be visible.
+  for (let i = 0; i < 2; i++) {
+    await app.cmd('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: 1250, y: 700, deltaX: 0, deltaY: -120, modifiers: 2,
+    });
+  }
+  await app.pollUntil(async () => (await deskZoom()) > 1.4 && (await deskPan()).x !== 0,
+    { timeout: 3000, interval: 50, label: 'Ctrl+wheel to zoom in off-centre' });
+
+  await ctrl('zero');
+  await app.pollUntil(async () => (await deskZoom()) === 1,
+    { timeout: 3000, interval: 50, label: 'Ctrl+0 to put the canvas back to exactly 100%' });
+  const pan = await deskPan();
+  assert.notDeepEqual(pan, { x: 0, y: 0 },
+    'Ctrl+0 resets the zoom only — it must not teleport the pan home to the origin');
+});
+
+test('the same chords inside an open note editor never touch the zoom', async () => {
+  await resetViewButton();
+  const r = await app.noteBodyRect(NOTE.plain);
+  await app.dblclick((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+  await app.pollUntil(
+    () => app.evaljs(`document.activeElement === document.querySelector('[data-note-id="${NOTE.plain}"] textarea')`),
+    { timeout: 3000, interval: 100, label: 'the note editor textarea to take focus' },
+  );
+
+  const z0 = await deskZoom();
+  const before = await app.evaljs(`document.querySelector('[data-note-id="${NOTE.plain}"] textarea').value`);
+  await ctrl('equal');
+  await ctrl('numpadAdd');
+  await ctrl('minus');
+  await ctrl('zero');
+  await app.sleep(250); // negative assertion — window for any wrong zoom to land
+
+  assert.equal(await deskZoom(), z0,
+    'while the caret is in a note editor, Ctrl +/-/0 belong to the text field, not the canvas');
+  assert.equal(await app.evaljs(`document.querySelector('[data-note-id="${NOTE.plain}"] textarea').value`), before,
+    'the chords must not have typed anything into the note either');
+
+  await app.press('Escape');
+  await app.pollUntil(
+    () => app.evaljs(`!document.querySelector('[data-note-id="${NOTE.plain}"] textarea')`),
+    { timeout: 3000, interval: 100, label: 'the editor to close on Escape' },
+  );
 });

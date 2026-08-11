@@ -684,11 +684,7 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
     // Trackpad pinch (Ctrl+wheel synthesised) still feels responsive; mouse
     // wheels now step by a more controllable amount per notch.
     const factor = Math.exp(-e.deltaY * 0.005);
-    setView(v => {
-      const nz = Math.max(0.25, Math.min(3, v.z * factor));
-      const ratio = nz / v.z;
-      return { x: mx - (mx - v.x) * ratio, y: my - (my - v.y) * ratio, z: nz };
-    });
+    setView(v => zoomViewAt(v, factor, mx, my));
   };
 
   const onMouseDown = (e) => {
@@ -842,19 +838,12 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
       const dy = t1.clientY - t0.clientY;
       const d = Math.hypot(dx, dy);
       if (d === 0) return;
-      // Same clamp range as onWheel (0.25 .. 3).
-      const nz = Math.max(0.25, Math.min(3, p.z0 * (d / p.d0)));
-      const ratio = nz / p.z0;
-      // Midpoint-preserving pan: algebraically identical to the wheel-zoom
-      // formula x' = mx - (mx - v.x) * ratio, but anchored at the pinch-start
-      // midpoint (mx0, my0) and applied against the pinch-start view offset
-      // (vx0, vy0) so the midpoint's world coordinate stays fixed under the
-      // midpoint's screen coordinate for the whole gesture.
-      setView(() => ({
-        x: p.mx0 - (p.mx0 - p.vx0) * ratio,
-        y: p.my0 - (p.my0 - p.vy0) * ratio,
-        z: nz,
-      }));
+      // Midpoint-preserving pan: the shared anchored-zoom formula, but
+      // applied to the pinch-START view (z0, vx0, vy0) and anchored at the
+      // pinch-start midpoint (mx0, my0), so the midpoint's world coordinate
+      // stays fixed under the midpoint's screen coordinate for the whole
+      // gesture (the whole pinch is one absolute transform, not increments).
+      setView(() => zoomViewAt({ x: p.vx0, y: p.vy0, z: p.z0 }, d / p.d0, p.mx0, p.my0));
     };
     const end = (e) => {
       // End as soon as fewer than 2 fingers remain. Do NOT promote the
@@ -906,11 +895,7 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       // Same clamp range and cursor-anchored formula as onWheel.
-      setView(v => {
-        const nz = Math.max(0.25, Math.min(3, v.z * factor));
-        const ratio = nz / v.z;
-        return { x: mx - (mx - v.x) * ratio, y: my - (my - v.y) * ratio, z: nz };
-      });
+      setView(v => zoomViewAt(v, factor, mx, my));
     };
     const end = (e) => e.preventDefault();
     desk.addEventListener('gesturestart', start);
@@ -961,14 +946,23 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
   }, [marquee, view.x, view.y, view.z, notes, selectedIds, setSelectedIds]);
 
   const resetView = () => setView({x:0, y:0, z:1});
+  // Zoom by a fixed step about the centre of the desk viewport — the anchor
+  // for every zoom that has no pointer of its own (the +/− buttons and the
+  // keyboard shortcuts), so the view scales around whatever the user is
+  // already looking at instead of jumping.
   const zoomTo = (factor) => {
     const rect = deskRef.current.getBoundingClientRect();
-    const mx = rect.width/2, my = rect.height/2;
-    setView(v => {
-      const nz = Math.max(0.25, Math.min(3, v.z * factor));
-      const ratio = nz / v.z;
-      return { x: mx - (mx - v.x) * ratio, y: my - (my - v.y) * ratio, z: nz };
-    });
+    setView(v => zoomViewAt(v, factor, rect.width/2, rect.height/2));
+  };
+  // Ctrl/Cmd+0: back to 100%, centre-anchored. Only the SCALE is reset —
+  // the pan is deliberately left where it is (beyond the centre-preserving
+  // offset the anchor implies), because the shortcut everywhere else in
+  // desktop software means "actual size", not "go home". Teleporting the
+  // canvas to the origin would lose the user's place; the desk's "Reset
+  // view" button and its context-menu entry still do the full x/y/z reset.
+  const zoomReset = () => {
+    const rect = deskRef.current.getBoundingClientRect();
+    setView(v => zoomViewAt(v, 1 / v.z, rect.width/2, rect.height/2));
   };
   const fitToNotes = () => {
     if (!notes.length) { resetView(); return; }
@@ -1002,6 +996,32 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
       z: nz,
     });
   };
+
+  // Keyboard zoom (issue #45): Ctrl/Cmd with +/= zooms in, with -/_ zooms
+  // out, with 0 returns to 100%. Same step as the on-screen +/− buttons,
+  // same clamp as every other zoom path, anchored at the viewport centre
+  // since a keystroke carries no cursor position. zoomActionForKey owns the
+  // layout/numpad matching and the "user is typing" opt-out.
+  //
+  // These chords zoom the CANVAS only. Electron applies no page zoom of its
+  // own here: the app menu (main.js buildMenu) deliberately defines no
+  // zoomIn/zoomOut/resetZoom roles, and unlike Ctrl+wheel — which Chromium
+  // handles internally, hence the wheel guard in AppInner — keyboard zoom is
+  // a browser-UI shortcut that doesn't exist in Electron. Verified over CDP:
+  // devicePixelRatio and innerWidth don't budge for any of these chords. The
+  // preventDefault below is still worth having: it keeps the browser demo
+  // (where Ctrl+- DOES zoom the page) from doubling up.
+  useEffect(() => {
+    const onKey = (e) => {
+      const action = zoomActionForKey(e, document.activeElement);
+      if (!action) return;
+      e.preventDefault();
+      if (action === 'reset') zoomReset();
+      else zoomTo(action === 'in' ? 1.2 : 1/1.2);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Escape cancels link-drawing. Kept in its own effect so the listener
   // isn't torn down on every mousemove (which replaces linkingFrom).
@@ -1210,11 +1230,11 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
         boxShadow:'0 2px 8px rgba(0,0,0,.08)', zIndex:500,
         fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
       }}>
-        <button onClick={()=>zoomTo(1/1.2)} title="Zoom out" style={zBtn(T)}>−</button>
-        <button onClick={resetView} title="Reset view (press 0)" style={{
+        <button onClick={()=>zoomTo(1/1.2)} title="Zoom out (Ctrl −)" style={zBtn(T)}>−</button>
+        <button onClick={resetView} title="Reset view (Ctrl 0 resets the zoom)" style={{
           ...zBtn(T), width:'auto', padding:'0 10px', fontSize:11, fontVariantNumeric:'tabular-nums', fontWeight:600,
         }}>{Math.round(view.z*100)}%</button>
-        <button onClick={()=>zoomTo(1.2)} title="Zoom in" style={zBtn(T)}>+</button>
+        <button onClick={()=>zoomTo(1.2)} title="Zoom in (Ctrl +)" style={zBtn(T)}>+</button>
         <div style={{width:1, height:20, background:T.hairline, margin:'0 3px'}}/>
         <button onClick={fitToNotes} title="Fit all notes to view" style={{...zBtn(T), width:'auto', padding:'0 8px', fontSize:11}}>fit</button>
       </div>

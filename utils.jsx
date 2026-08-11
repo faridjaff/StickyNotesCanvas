@@ -663,6 +663,71 @@ function withA(hex, a) {
   const h = hex.replace('#',''); const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
 }
+
+/* ---------- CANVAS ZOOM ----------
+ * One clamp and one anchored-zoom formula shared by every zoom path on the
+ * desk: Ctrl+wheel, trackpad/touch pinch, the on-screen +/− buttons and the
+ * keyboard shortcuts (issue #45). Pure, so the maths is unit-testable
+ * without a DOM.
+ */
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 3;
+
+// Scale `view` by `factor` about the anchor point (ax, ay), given in
+// desk-relative SCREEN coordinates. The world point currently under the
+// anchor stays under the anchor, so zooming feels like it happens at the
+// cursor / pinch midpoint / viewport centre rather than at the origin.
+// Derivation: screen = world * z + offset, so holding
+// (ax - x) / z constant across the change gives x' = ax - (ax - x) * z'/z.
+// The new scale is clamped to [ZOOM_MIN, ZOOM_MAX]; at a clamp boundary the
+// ratio becomes 1 and the view is returned unchanged.
+function zoomViewAt(view, factor, ax, ay) {
+  const nz = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, view.z * factor));
+  const ratio = nz / view.z;
+  return { x: ax - (ax - view.x) * ratio, y: ay - (ay - view.y) * ratio, z: nz };
+}
+
+// Is this element a text-entry surface that owns its own keystrokes?
+// Mirrors the activeElement gate on the global Ctrl+Z handler in app.jsx.
+function isTextEntryElement(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA';
+}
+
+// Which canvas zoom does this keydown ask for — 'in', 'out', 'reset', or
+// null for "not a zoom chord, leave the event alone"? (issue #45)
+//
+//   Ctrl/Cmd and '+' or '='   → in      (US layouts report '=' unshifted and
+//                                        '+' when Shift is held; both mean
+//                                        "zoom in" to everyone)
+//   Ctrl/Cmd and '-' or '_'   → out
+//   Ctrl/Cmd and '0'          → reset
+//
+// their e.key is layout- and NumLock-dependent; some engines still report
+// the legacy 'Add' / 'Subtract' names, so those are accepted as keys too.
+// and Ctrl+Insert is copy.
+//
+// Held Alt disqualifies the chord — Ctrl+Alt is AltGr on Windows/Linux
+// layouts, where it types characters rather than invoking shortcuts.
+//
+// `activeElement` (pass document.activeElement) and the event's own target
+// are both checked: while the user is typing in a note editor, the search
+// box or any other field, Ctrl+0 / Ctrl+- / Ctrl++ belong to that field.
+function zoomActionForKey(e, activeElement) {
+  if (!e) return null;
+  if (!(e.ctrlKey || e.metaKey)) return null;
+  if (e.altKey) return null;
+  if (isTextEntryElement(activeElement) || isTextEntryElement(e.target)) return null;
+  switch (e.key) {
+    case '+': case '=': return 'in';
+    case '-': case '_': return 'out';
+    case '0':           return 'reset';
+    default:            return null;
+  }
+}
+
 const STICKY_CLIPBOARD_MARKER = '<!-- sticky-notes/v1 -->';
 
 function notesToClipboardText(notes, links) {
@@ -773,4 +838,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, imageMimeForFile, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, WHATS_NEW_ID, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, imageMimeForFile, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, WHATS_NEW_ID, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });

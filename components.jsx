@@ -1750,17 +1750,34 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               const imgItem = items.find(it => it.kind === 'file' && /^image\//.test(it.type));
               if (imgItem && window.stickyAPI && window.stickyAPI.saveImage) {
                 e.preventDefault();
-                const file = imgItem.getAsFile();
-                if (!file) return;
                 const start = ta.selectionStart, end = ta.selectionEnd;
-                file.arrayBuffer()
-                  .then(buf => window.stickyAPI.saveImage(new Uint8Array(buf), file.type))
-                  .then(res => {
-                    if (!res || !res.ok) { console.warn('[paste-image]', res && res.error); return; }
-                    ta.focus();
-                    ta.setSelectionRange(start, end);
-                    document.execCommand('insertText', false, `![](${res.ref})`);
-                  })
+                const insert = (res) => {
+                  if (!res || !res.ok) return false;
+                  ta.focus();
+                  ta.setSelectionRange(start, end);
+                  document.execCommand('insertText', false, `![](${res.ref})`);
+                  return true;
+                };
+                // Preferred path: the main process reads the picture straight
+                // off the OS clipboard. The File this paste event carries is
+                // backed by a Chromium temp file that is unreadable inside
+                // the flatpak sandbox (arrayBuffer rejects with NotFoundError,
+                // and the paste silently did nothing), so it is only the
+                // fallback — for the rare clipboard whose image the native
+                // layer can't decode but the renderer can.
+                const viaFile = () => {
+                  const file = imgItem.getAsFile();
+                  if (!file) return;
+                  return file.arrayBuffer()
+                    .then(buf => window.stickyAPI.saveImage(new Uint8Array(buf), file.type))
+                    .then(res => { if (!insert(res)) console.warn('[paste-image]', res && res.error); });
+                };
+                const viaClipboard = window.stickyAPI.saveClipboardImage
+                  ? window.stickyAPI.saveClipboardImage()
+                  : Promise.resolve(null);
+                viaClipboard
+                  .then(res => (insert(res) ? null : viaFile()))
+                  .catch(err => { console.warn('[paste-image]', err); return viaFile(); })
                   .catch(err => console.warn('[paste-image]', err));
                 return;
               }

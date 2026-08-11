@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   // Resolves { ok, ref } where ref is the sticky-image:// URL that note
   // markdown embeds as ![](ref) and mdToHtml renders as an <img>.
   saveImage: (bytes, mime) => ipcRenderer.invoke('images:save', bytes, mime),
+  // Save the clipboard's image without touching the renderer's File object,
+  // which is unreadable in the flatpak sandbox. Preferred paste path.
+  saveClipboardImage: () => ipcRenderer.invoke('images:save-clipboard'),
 
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.

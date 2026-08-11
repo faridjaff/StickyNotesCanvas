@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, Menu, dialog, net, protocol, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -227,6 +227,24 @@ ipcMain.handle('images:save', async (_e, bytes, mime) => {
   }
   try {
     const name = saveImage(imagesDir(), Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), mime);
+    return { ok: true, ref: `sticky-image://${name}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Save whatever image is on the system clipboard right now. The renderer's
+// own paste path reads the clipboard File, whose backing temp file is
+// unreadable inside the flatpak sandbox ("NotFoundError" on arrayBuffer), so
+// the renderer asks for this instead and only falls back to its File when
+// the clipboard holds no image. Read here, in the main process, straight
+// from the OS clipboard — no temp file involved. Everything is re-encoded to
+// PNG, which is what nativeImage gives us (an animated GIF loses animation).
+ipcMain.handle('images:save-clipboard', async () => {
+  try {
+    const img = clipboard.readImage();
+    if (!img || img.isEmpty()) return { ok: false, error: 'no image on the clipboard' };
+    const name = saveImage(imagesDir(), img.toPNG(), 'image/png');
     return { ok: true, ref: `sticky-image://${name}` };
   } catch (err) {
     return { ok: false, error: err.message };

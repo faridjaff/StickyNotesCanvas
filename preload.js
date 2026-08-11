@@ -38,6 +38,13 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   pickImage: () => ipcRenderer.invoke('images:pick'),
   // Pin the menu bar open, or return it to Alt-summoned (#42).
   setMenuBarVisible: (show) => ipcRenderer.invoke('window:menu-bar', !!show),
+  // Copy/paste of notes that contain pictures (issue #38).
+  // readImages(names) -> { ok, images: { '<hash>.<ext>': '<base64>' } }, the
+  // bytes to bundle into the clipboard payload ({} when the set is over the
+  // clipboard budget). writeImages(map) puts a pasted payload's pictures
+  // back on disk, re-hashing each one first; it never throws at the caller.
+  readImages: (names) => ipcRenderer.invoke('images:read', names),
+  writeImages: (images) => ipcRenderer.invoke('images:write', images),
 
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.

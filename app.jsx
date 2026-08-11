@@ -322,8 +322,20 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     // Preserve canvas (z-order) order so the human-readable text reads
     // top-to-bottom roughly as the user sees the cluster.
     const ordered = notes.filter(n => idSet.has(n.id));
+    // Bundle the pictures these notes reference so they survive the paste
+    // (#38). Best effort on top of the copy that already worked: if the
+    // bytes can't be read, or the set is over the clipboard budget, the
+    // notes still copy with their references alone, exactly as before.
+    let images = null;
     try {
-      await navigator.clipboard.writeText(notesToClipboardText(ordered, links));
+      const names = imageRefsInNotes(ordered);
+      if (names.length && window.stickyAPI?.readImages) {
+        const res = await window.stickyAPI.readImages(names);
+        if (res?.ok) images = res.images;
+      }
+    } catch (e) { console.warn('[copy] images', e); }
+    try {
+      await navigator.clipboard.writeText(notesToClipboardText(ordered, links, images));
       return true;
     } catch (e) {
       return false;
@@ -369,6 +381,15 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     if (!payload.notes.length) {
       setPasteError("Nothing to import — the clipboard contained an empty notes set.");
       return;
+    }
+
+    // Pictures the payload carried (#38): store them under their content-hash
+    // names before the notes render, so the <img> resolves on first paint.
+    // Fails soft — main re-hashes every one and refuses the rest, and a
+    // picture that doesn't make it just leaves its note without the image.
+    if (Object.keys(payload.images || {}).length && window.stickyAPI?.writeImages) {
+      try { await window.stickyAPI.writeImages(payload.images); }
+      catch (err) { console.warn('[paste] images', err); }
     }
 
     // Anchor near the visible viewport's top-left (in screen pixels, then

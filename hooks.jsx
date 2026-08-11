@@ -113,6 +113,10 @@ function useStickyStore(onImportRequest) {
     try {
       if (window.stickyAPI) {
         const res = await window.stickyAPI.importFile();
+        // Pictures bundled in the backup (#38) are written by the main
+        // process before this resolves; it reports what it did with them so
+        // a restore that came back short can be explained. Never fatal.
+        if (res?.images) console.info('[import] images', res.images);
         if (res?.ok && res.data) {
           const next = withDefaults(res.data);
           setStore(next);

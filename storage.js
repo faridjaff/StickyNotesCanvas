@@ -137,6 +137,120 @@ function readMarkdownFile(filePath) {
   }
 }
 
+/* ---------- Carrying images between machines (issue #38) ----------
+ * A note body only ever holds a REFERENCE to a picture; the bytes live in
+ * userData/images/. Two flows have to carry both halves or the pictures
+ * arrive empty on the other side: a backup file (notes:export/import) and
+ * a copied note (the clipboard payload). Both bundle the referenced images
+ * as base64 under their content-hash names.
+ *
+ * Everything below treats the incoming bundle as UNTRUSTED (a backup file
+ * or the clipboard can come from anywhere): a name must match
+ * IMAGE_FILE_RE — never a path out of the payload — and the decoded bytes
+ * must actually hash to that name before anything is written, so a hostile
+ * bundle can't plant chosen content under a name a note then renders.
+ */
+
+// How many base64 characters of pictures a CLIPBOARD payload may carry
+// (a backup file has no such limit — it's a file the user asked for).
+// ~1.5 MB of image bytes: enough for a screenshot or two, small enough that
+// the system clipboard, and every app the text might be pasted into, stays
+// comfortable. utils.jsx holds the renderer-side copy of this number (it
+// can't require this file); tests/backup.test.mjs guards them against drift.
+const CLIPBOARD_IMAGE_BUDGET = 2 * 1024 * 1024;
+
+// Every hash-named image referenced anywhere in `source` — a raw string, or
+// any object (the store, a clipboard payload), which is scanned as its JSON
+// text so bodies, titles and anything else are all covered at once. Only the
+// exact reference shape counts; utils.jsx's IMAGE_REF_RE is its renderer-side
+// mirror, and both agree with IMAGE_FILE_RE on what a name may look like.
+function referencedImageNames(source) {
+  let text = '';
+  if (typeof source === 'string') text = source;
+  else { try { text = JSON.stringify(source) || ''; } catch { text = ''; } }
+  const names = new Set();
+  for (const m of text.matchAll(/sticky-image:\/\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))/g)) {
+    names.add(m[1]);
+  }
+  return names;
+}
+
+// Do these bytes really belong under this name? The name IS the content
+// hash, so re-hashing is the whole verification: same bytes, same name.
+function imageBytesMatchName(name, bytes) {
+  if (!IMAGE_FILE_RE.test(String(name == null ? '' : name))) return false;
+  const mime = mimeForImageName(name);
+  return !!mime && imageFileName(bytes, mime) === name;
+}
+
+// Read stored pictures back as base64, for bundling into a payload.
+// Unknown/unstorable names and missing files are skipped silently — a
+// reference whose file is gone simply travels without its picture, exactly
+// as it renders today. `budget` caps the TOTAL base64 length: over it, the
+// whole set is dropped ({}), because the clipboard policy is all-or-nothing
+// (see notesToClipboardText in utils.jsx) and a half-carried set would be a
+// worse surprise than none.
+function readImages(dir, names, budget = Infinity) {
+  const out = {};
+  let total = 0;
+  for (const name of names || []) {
+    if (!IMAGE_FILE_RE.test(String(name)) || Object.hasOwn(out, name)) continue;
+    try {
+      const file = path.join(dir, name);
+      if (!fs.existsSync(file)) continue;
+      const b64 = fs.readFileSync(file).toString('base64');
+      total += b64.length;
+      if (total > budget) return {};
+      out[name] = b64;
+    } catch (err) {
+      console.warn(`[storage] failed to read image ${name}: ${err.message}`);
+    }
+  }
+  return out;
+}
+
+// The images a payload needs to carry: exactly the ones its own content
+// references, never the whole images dir.
+function collectImages(dir, source, budget = Infinity) {
+  return readImages(dir, [...referencedImageNames(source)], budget);
+}
+
+// Write a bundle of base64 pictures back into the images dir. Fail soft and
+// per entry — a picture that can't be written is reported, never thrown, so
+// a restore always completes and the note simply renders without it.
+//   written  — new file created
+//   skipped  — already on disk; the name is the content hash, so the file
+//              there is byte-identical and rewriting it would be pointless
+//   rejected — [{ name, reason }] for anything refused or failed
+function writeImages(dir, images) {
+  const written = [], skipped = [], rejected = [];
+  if (!images || typeof images !== 'object' || Array.isArray(images)) {
+    return { written, skipped, rejected };
+  }
+  for (const [name, b64] of Object.entries(images)) {
+    if (!IMAGE_FILE_RE.test(name)) { rejected.push({ name, reason: 'not a valid image name' }); continue; }
+    if (typeof b64 !== 'string' || !b64) { rejected.push({ name, reason: 'no image data' }); continue; }
+    let bytes;
+    try { bytes = Buffer.from(b64, 'base64'); } catch { bytes = null; }
+    if (!bytes || !bytes.length) { rejected.push({ name, reason: 'undecodable image data' }); continue; }
+    // The security gate: the bytes must hash to the name they claim.
+    if (!imageBytesMatchName(name, bytes)) {
+      rejected.push({ name, reason: 'content does not match its hash name' });
+      continue;
+    }
+    const file = path.join(dir, name);
+    try {
+      if (fs.existsSync(file)) { skipped.push(name); continue; }
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, bytes);
+      written.push(name);
+    } catch (err) {
+      rejected.push({ name, reason: err.message });
+    }
+  }
+  return { written, skipped, rejected };
+}
+
 // Notes are saved wholesale (there is no per-note delete at the storage
 // level), so deleting a note — or undoing a paste — can orphan its image
 // files. Called once at app startup, when no paste can be in flight: every
@@ -146,10 +260,7 @@ function sweepOrphanImages(dir, notesFilePath) {
   if (!fs.existsSync(dir)) return [];
   let raw = '';
   try { raw = fs.readFileSync(notesFilePath, 'utf8'); } catch {}
-  const referenced = new Set();
-  for (const m of raw.matchAll(/sticky-image:\/\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))/g)) {
-    referenced.add(m[1]);
-  }
+  const referenced = referencedImageNames(raw);
   const removed = [];
   for (const name of fs.readdirSync(dir)) {
     if (!IMAGE_FILE_RE.test(name) || referenced.has(name)) continue;
@@ -166,4 +277,6 @@ function sweepOrphanImages(dir, notesFilePath) {
 module.exports = {
   load, save, imageFileName, mimeForImageName, saveImage, saveImageFromFile,
   sweepOrphanImages, readMarkdownFile, IMAGE_FILE_RE, MAX_IMAGE_BYTES,
+  referencedImageNames, imageBytesMatchName, readImages, collectImages, writeImages,
+  CLIPBOARD_IMAGE_BUDGET,
 };

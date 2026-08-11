@@ -87,7 +87,14 @@ can never touch real user notes. Unset, the app behaves exactly as before.
   which is how Chromium itself delivers a file-manager drop): dropping a
   PNG on a note stores it under `<userData>/images/` and appends the
   reference on its own line, dropping a `.txt` changes nothing, and
-  dropping onto an open editor inserts at the caret.
+  dropping onto an open editor inserts at the caret. Then bundled images
+  (#38): `stickyAPI.readImages` returns the base64 behind a reference and
+  refuses traversal/unknown names, `stickyAPI.writeImages` stores a picture
+  that arrived only as base64 (the protocol then serves it) but refuses
+  bytes that don't hash to the name they claim, and a full Ctrl+C → delete
+  the file → Ctrl+V round trip puts the picture back on disk. That last one
+  uses the REAL system clipboard (nothing else can test that path), so a
+  run replaces whatever you had copied.
 - `editing.e2e.mjs` — editor keystrokes against the real textarea: Enter
   continues ordered lists ("1. x" → "2. "), Tab renumbers-to-1 while
   nesting ("2. y" → "   1. y"), Enter continues blockquotes ("> q" → "> "),
@@ -154,3 +161,23 @@ What to check there for the file routes into a note:
   portal grants it to that process; a renderer-side read would fail here the
   way image pasting used to. Worth one round trip in both directions: a
   note's "Download", then importing the file it wrote back.
+
+## What only a human can check: backup files (#38)
+
+File → **Save backup…** and **Restore backup…** each open a native
+save/open dialog, and there is no way to drive those from CDP — so the
+suite covers everything underneath them (`collectImages` / `writeImages` in
+`tests/backup.test.mjs`, the `images:read` / `images:write` IPC and the
+protocol in `images.e2e.mjs`) and stops at the dialog. Confirm the ends by
+hand before releasing a change to this flow:
+
+1. paste or drop a picture into a note, then File → Save backup…; the JSON
+   has a top-level `images` object holding the referenced `<hash>.<ext>`
+   files as base64, and nothing else about the file has changed;
+2. on a clean profile (`STICKY_USER_DATA=$(mktemp -d)`), File → Restore
+   backup… that file: the note renders its picture, and the bytes are back
+   under `<userData>/images/`;
+3. restore a backup written by 2.1.0 or earlier (no `images` key): it
+   restores exactly as it always did, no error;
+4. open a new backup in an older build: the notes restore, the pictures are
+   simply missing (`withDefaults` drops the unknown key).

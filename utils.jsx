@@ -1212,7 +1212,61 @@ function hoverInk(T) {
 
 const STICKY_CLIPBOARD_MARKER = '<!-- sticky-notes/v1 -->';
 
-function notesToClipboardText(notes, links) {
+/* ---------- Pictures in a copied note (issue #38) ----------
+ * A note body only references its pictures (sticky-image://<hash>.<ext>);
+ * the bytes live in userData/images/. Copying just the text meant pasting
+ * into another window — or another machine — produced empty pictures, so
+ * the payload now carries them too, base64 under an "images" key.
+ *
+ * The policy, all-or-nothing and deliberate: the clipboard is a text
+ * channel shared with every other app, so the pictures ride along only
+ * while the whole set fits under CLIPBOARD_IMAGE_BYTES. Over that, the
+ * notes are copied exactly as they were before — references intact,
+ * pictures simply missing — instead of half of them travelling. Nothing
+ * about the human-readable half (title + body, everything before the
+ * marker) changes either way: that's what people paste into an email.
+ *
+ * Both directions stay compatible: an old payload has no images key and
+ * parses as it always did, and a new payload is still the same
+ * { notes, links } object any older build reads (it ignores the extra key).
+ */
+// Renderer-side copy of storage.js's CLIPBOARD_IMAGE_BUDGET (this file
+// can't require a node module). tests/backup.test.mjs guards the drift.
+const CLIPBOARD_IMAGE_BYTES = 2 * 1024 * 1024;
+
+// Every picture these notes reference, in the one shape the app accepts.
+// The non-anchored twin of IMAGE_REF_RE — same filename rule, scanned out
+// of running text — mirroring storage.js's referencedImageNames.
+function imageRefsInNotes(notes) {
+  const names = new Set();
+  for (const n of notes || []) {
+    const text = `${(n && n.body) || ''}\n${(n && n.title) || ''}`;
+    for (const m of text.matchAll(/sticky-image:\/\/([0-9a-f]{16}\.(?:png|jpg|gif|webp))/g)) {
+      names.add(m[1]);
+    }
+  }
+  return [...names];
+}
+
+// The subset of `images` these notes actually reference, or null when there
+// is nothing to carry or the set is over budget. Pure, so the policy is
+// testable on its own.
+function clipboardImagesFor(notes, images) {
+  if (!images || typeof images !== 'object') return null;
+  const out = {};
+  let total = 0, count = 0;
+  for (const name of imageRefsInNotes(notes)) {
+    const b64 = images[name];
+    if (typeof b64 !== 'string' || !b64) continue;
+    total += b64.length;
+    if (total > CLIPBOARD_IMAGE_BYTES) return null;   // all-or-nothing
+    out[name] = b64;
+    count++;
+  }
+  return count ? out : null;
+}
+
+function notesToClipboardText(notes, links, images) {
   const human = notes.map(n => (n.title || 'Untitled') + (n.body ? '\n\n' + n.body : '')).join('\n\n---\n\n');
   // Carry any link with at least one endpoint inside the copied set.
   // Internal links (both endpoints inside) are remapped to the new ids on
@@ -1228,6 +1282,10 @@ function notesToClipboardText(notes, links) {
     })),
     links: subLinks.map(l => ({ from: l.from, to: l.to })),
   };
+  // Added last, and only when there is something to carry, so a copy with
+  // no pictures is byte-for-byte the payload this app has always written.
+  const bundled = clipboardImagesFor(notes, images);
+  if (bundled) payload.images = bundled;
   return human + '\n\n' + STICKY_CLIPBOARD_MARKER + '\n' + JSON.stringify(payload);
 }
 
@@ -1238,10 +1296,18 @@ function clipboardTextToNotes(text) {
   try {
     const parsed = JSON.parse(json);
     // Bare-array form is the legacy v1 payload; wrap so callers can treat both
-    // shapes the same. New form is { notes: [...], links: [...] }.
-    if (Array.isArray(parsed)) return { notes: parsed, links: [] };
+    // shapes the same. New form is { notes: [...], links: [...] }, plus the
+    // optional images bundle (#38) — absent in every older payload, which is
+    // why it always resolves to {} rather than being missing.
+    if (Array.isArray(parsed)) return { notes: parsed, links: [], images: {} };
     if (parsed && Array.isArray(parsed.notes)) {
-      return { notes: parsed.notes, links: Array.isArray(parsed.links) ? parsed.links : [] };
+      return {
+        notes: parsed.notes,
+        links: Array.isArray(parsed.links) ? parsed.links : [],
+        // Only what these notes reference — a payload can't smuggle extra
+        // files past the paste (main re-hashes each one before writing).
+        images: clipboardImagesFor(parsed.notes, parsed.images) || {},
+      };
     }
     return null;
   } catch { return null; }
@@ -1319,5 +1385,4 @@ function downloadUrlForPlatform(version) {
 }
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
-
-Object.assign(window, { FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, flattenPreviewText, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, isDarkSurface, markdownFileBody, markdownFileTitle, markdownFileToNote, markdownVisibleText, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, pickMarkdownFiles, renderedWordAt, sanitizeFolderParents, sourceCaretForPreviewClick, sourceOffsetForWord, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });
+Object.assign(window, { CLIPBOARD_IMAGE_BYTES, FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardImagesFor, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, flattenPreviewText, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, imageRefsInNotes, isDarkSurface, markdownFileBody, markdownFileTitle, markdownFileToNote, markdownVisibleText, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, pickMarkdownFiles, renderedWordAt, sanitizeFolderParents, sourceCaretForPreviewClick, sourceOffsetForWord, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });

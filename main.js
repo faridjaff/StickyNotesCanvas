@@ -5,6 +5,8 @@ const { pathToFileURL } = require('node:url');
 const {
   load: loadNotes, save: saveNotes,
   saveImage, saveImageFromFile, sweepOrphanImages, readMarkdownFile, IMAGE_FILE_RE,
+  referencedImageNames, readImages, collectImages, writeImages,
+  CLIPBOARD_IMAGE_BUDGET,
 } = require('./storage.js');
 
 // E2E test hook: when STICKY_USER_DATA is set, store all app data (notes.json,
@@ -316,6 +318,66 @@ ipcMain.handle('images:pick', async () => {
   return storeImageFile(filePaths[0]);
 });
 
+/* ---------- Backup files (issue #38) ----------
+ * A backup used to carry only the store, so its notes referenced pictures
+ * that existed on that machine alone. It now carries them: one extra
+ * top-level "images" key, { "<hash>.<ext>": "<base64>" }, holding exactly
+ * the pictures the exported notes reference. The rest of the file is
+ * unchanged, so an OLD build reads a new backup exactly as it reads its own
+ * (withDefaults keeps only the known keys and drops "images"), and a new
+ * build reads an old backup exactly as before (no images key, nothing to
+ * restore). A store with no pictures still exports byte-for-byte what it
+ * did before — the key is omitted entirely rather than written empty.
+ */
+
+// Put a backup's images back on disk. Untrusted input, so storage.js
+// re-hashes every entry before writing, and only images the restored notes
+// actually reference are considered. Fails soft as a whole and per picture:
+// a restore always completes, a picture that can't be written is logged and
+// simply missing. Returns a small count summary (or null) for logging.
+function restoreBackupImages(images, data) {
+  try {
+    const referenced = referencedImageNames(data);
+    const wanted = {};
+    for (const [name, b64] of Object.entries(images || {})) {
+      if (referenced.has(name)) wanted[name] = b64;
+    }
+    const { written, skipped, rejected } = writeImages(imagesDir(), wanted);
+    for (const r of rejected) console.warn(`[main] backup image refused (${r.name}): ${r.reason}`);
+    return { written: written.length, skipped: skipped.length, rejected: rejected.length };
+  } catch (err) {
+    console.warn('[main] restoring backup images failed:', err.message);
+    return null;
+  }
+}
+
+// Copying notes: hand the renderer the bytes behind a list of hash-named
+// pictures, base64-encoded, so it can bundle them into the clipboard
+// payload. Capped at CLIPBOARD_IMAGE_BUDGET — over that the set comes back
+// empty and the notes are copied with their references alone, which is
+// exactly how they travelled before. Names are filtered by IMAGE_FILE_RE,
+// so this can never read anything but a stored picture.
+ipcMain.handle('images:read', async (_e, names) => {
+  try {
+    return { ok: true, images: readImages(imagesDir(), Array.isArray(names) ? names : [], CLIPBOARD_IMAGE_BUDGET) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Pasting notes: put the pictures a payload carries back on disk. The
+// clipboard is untrusted input, so storage.js re-hashes every entry and
+// refuses anything whose bytes don't match the name they claim.
+ipcMain.handle('images:write', async (_e, images) => {
+  try {
+    const { written, skipped, rejected } = writeImages(imagesDir(), images);
+    for (const r of rejected) console.warn(`[main] pasted image refused (${r.name}): ${r.reason}`);
+    return { ok: true, written, skipped, rejected };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
 ipcMain.handle('notes:export', async (_e, data) => {
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: 'Save backup',
@@ -324,7 +386,21 @@ ipcMain.handle('notes:export', async (_e, data) => {
   });
   if (canceled || !filePath) return { ok: false, canceled: true };
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    let payload = data;
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      // Bundling must never cost the user their backup: if reading the
+      // pictures fails, write the store on its own, as before.
+      let images = {};
+      try { images = collectImages(imagesDir(), data); } catch (err) {
+        console.warn('[main] bundling backup images failed:', err.message);
+      }
+      const count = Object.keys(images).length;
+      if (count) {
+        payload = { ...data, images };
+        console.log(`[main] backup includes ${count} image(s)`);
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
     return { ok: true, path: filePath };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -380,7 +456,19 @@ ipcMain.handle('notes:import', async () => {
   if (canceled || !filePaths?.length) return { ok: false, canceled: true };
   try {
     const raw = fs.readFileSync(filePaths[0], 'utf8');
-    return { ok: true, data: JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    // Pictures first, store second — so by the time the renderer swaps in
+    // the restored notes their images are already on disk. An old backup
+    // has no images key and takes this path unchanged.
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.images) {
+      const { images, ...data } = parsed;
+      const report = restoreBackupImages(images, data);
+      if (report) console.log(`[main] restored images: ${JSON.stringify(report)}`);
+      // The renderer gets the store exactly as it always did — the base64
+      // never reaches it, so it can never end up back in notes.json.
+      return { ok: true, data, images: report || undefined };
+    }
+    return { ok: true, data: parsed };
   } catch (err) {
     return { ok: false, error: err.message };
   }

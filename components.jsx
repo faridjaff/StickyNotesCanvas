@@ -1,5 +1,39 @@
 const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, Fragment } = React;
 
+/* ---------- hover helpers (issue #49) ----------
+ * Nearly every control in this file is inline-styled, and an inline
+ * background beats any stylesheet :hover rule — so hover has to be applied
+ * from JS. These two builders keep every surface on the same theme-derived
+ * highlight (see hoverBg in utils.jsx) instead of the hand-rolled rgba each
+ * call site used to invent, which is how the terminal theme ended up with a
+ * hover nobody could see.
+ *   hoverProps(T, idleBg)  — controls on a themed panel (menus, drawer, chrome)
+ *   inkHoverProps(ink, o)  — controls sitting on a note's own paper colour,
+ *                            where the theme tokens don't apply: notes are
+ *                            light in every theme, so their own ink is the
+ *                            right thing to darken with.
+ * Spread them AFTER any other mouse handlers on the element, or they clobber
+ * each other — none of the current call sites have their own.
+ */
+function hoverProps(T, idleBg = 'transparent', alpha) {
+  return {
+    onMouseEnter: (e) => { e.currentTarget.style.background = hoverBg(T, alpha); },
+    onMouseLeave: (e) => { e.currentTarget.style.background = idleBg; },
+  };
+}
+function inkHoverProps(ink, idleOpacity = 0.65) {
+  return {
+    onMouseEnter: (e) => {
+      e.currentTarget.style.background = withA(ink, .14);
+      e.currentTarget.style.opacity = 1;
+    },
+    onMouseLeave: (e) => {
+      e.currentTarget.style.background = 'transparent';
+      e.currentTarget.style.opacity = idleOpacity;
+    },
+  };
+}
+
 function Loading() {
   return (
     <div style={{
@@ -28,13 +62,19 @@ function UpdateBanner({ info, onDismiss }) {
       fontFamily:'Inter, system-ui, sans-serif',
     }}>
       <span>New version <b>v{info.version}</b> available</span>
-      <button onClick={open} style={{
+      <button onClick={open}
+        onMouseEnter={e=>{ e.currentTarget.style.background='#2563eb'; }}
+        onMouseLeave={e=>{ e.currentTarget.style.background='#3b82f6'; }}
+        style={{
         background:'#3b82f6', color:'#fff', border:'none', padding:'5px 12px',
-        borderRadius:4, cursor:'pointer', fontWeight:600, fontSize:12,
+        borderRadius:4, cursor:'pointer', fontWeight:600, fontSize:12, transition:'background .1s',
       }}>Download</button>
-      <button onClick={onDismiss} aria-label="Dismiss" style={{
+      <button onClick={onDismiss} aria-label="Dismiss"
+        onMouseEnter={e=>{ e.currentTarget.style.background='rgba(255,255,255,.18)'; e.currentTarget.style.color='#fff'; }}
+        onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#cbd5e1'; }}
+        style={{
         background:'transparent', border:'none', color:'#cbd5e1', cursor:'pointer',
-        fontSize:18, lineHeight:1, padding:'0 2px',
+        fontSize:18, lineHeight:1, padding:'0 2px', borderRadius:4, transition:'background .1s, color .1s',
       }}>×</button>
     </div>
   );
@@ -59,9 +99,13 @@ function PasteErrorToast({ message, onClose }) {
       fontFamily:'Inter, system-ui, sans-serif',
     }}>
       <span style={{flex:'1 1 auto', whiteSpace:'pre-line', lineHeight:1.45}}>{message}</span>
-      <button onClick={onClose} aria-label="Dismiss" style={{
+      <button onClick={onClose} aria-label="Dismiss"
+        onMouseEnter={e=>{ e.currentTarget.style.background='rgba(255,255,255,.18)'; e.currentTarget.style.color='#fff'; }}
+        onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='#fed7aa'; }}
+        style={{
         background:'transparent', border:'none', color:'#fed7aa', cursor:'pointer',
-        fontSize:18, lineHeight:1, padding:'0 2px', flex:'0 0 auto',
+        fontSize:18, lineHeight:1, padding:'0 2px', flex:'0 0 auto', borderRadius:4,
+        transition:'background .1s, color .1s',
       }}>×</button>
     </div>
   );
@@ -112,9 +156,13 @@ function InfoDialog({ info, onClose }) {
           }}>{info.detail}</div>
         )}
         <div style={{display:'flex', justifyContent:'flex-end'}}>
-          <button onClick={onClose} autoFocus style={{
+          <button onClick={onClose} autoFocus
+            onMouseEnter={e=>{ e.currentTarget.style.background='#c2603f'; }}
+            onMouseLeave={e=>{ e.currentTarget.style.background='#d97757'; }}
+            style={{
             background:'#d97757', color:'#fff', border:'none', borderRadius:6,
             padding:'8px 18px', fontSize:13, fontWeight:600, cursor:'pointer',
+            transition:'background .1s',
           }}>OK</button>
         </div>
       </div>
@@ -284,16 +332,23 @@ function ImportFromImageDialog({ open, onClose }) {
           capable model (Claude Opus/Sonnet, GPT-4o, Gemini 2.5 Pro).
         </div>
         <div style={{display:'flex', justifyContent:'flex-end', gap:8}}>
-          <button onClick={onClose} style={{
+          <button onClick={onClose}
+            onMouseEnter={e=>{ e.currentTarget.style.background='rgba(90,74,58,.12)'; }}
+            onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; }}
+            style={{
             background:'transparent', color:'#5a4a3a',
             border:'1px solid #d8cfbc', borderRadius:6,
             padding:'8px 14px', fontSize:13, fontWeight:600, cursor:'pointer',
+            transition:'background .1s',
           }}>Close</button>
-          <button onClick={doCopy} autoFocus style={{
+          <button onClick={doCopy} autoFocus
+            onMouseEnter={e=>{ e.currentTarget.style.background = copied ? '#3d8657' : '#c2603f'; }}
+            onMouseLeave={e=>{ e.currentTarget.style.background = copied ? '#4c9e6b' : '#d97757'; }}
+            style={{
             background: copied ? '#4c9e6b' : '#d97757', color:'#fff',
             border:'none', borderRadius:6,
             padding:'8px 18px', fontSize:13, fontWeight:600, cursor:'pointer',
-            minWidth:130,
+            minWidth:130, transition:'background .1s',
           }}>{copied ? 'Copied!' : 'Copy prompt'}</button>
         </div>
       </div>
@@ -461,16 +516,14 @@ function TopChrome({T, tweaks, currentFolderName, query, setQuery, onNewNote, on
               display:'block', width:'100%', textAlign:'left',
               padding:'8px 10px', background:'transparent', border:'none',
               color:T.panelText, fontSize:13, cursor:'pointer', borderRadius: isTerm?2:6,
-            }} onMouseEnter={e=>e.currentTarget.style.background=`${withA(T.panelText,.06)}`}
-               onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            }} {...hoverProps(T)}>
               Save backup…
             </button>
             <button onClick={()=>{setBackupOpen(false); onImport && onImport();}} style={{
               display:'block', width:'100%', textAlign:'left',
               padding:'8px 10px', background:'transparent', border:'none',
               color:T.panelText, fontSize:13, cursor:'pointer', borderRadius: isTerm?2:6,
-            }} onMouseEnter={e=>e.currentTarget.style.background=`${withA(T.panelText,.06)}`}
-               onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+            }} {...hoverProps(T)}>
               Restore backup…
             </button>
           </div>
@@ -1230,13 +1283,14 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
         boxShadow:'0 2px 8px rgba(0,0,0,.08)', zIndex:500,
         fontFamily: '"'+tweaks.font+'", system-ui, sans-serif',
       }}>
-        <button onClick={()=>zoomTo(1/1.2)} title="Zoom out (Ctrl −)" style={zBtn(T)}>−</button>
-        <button onClick={resetView} title="Reset view (Ctrl 0 resets the zoom)" style={{
+        {/* These four had no hover feedback at all before issue #49. */}
+        <button onClick={()=>zoomTo(1/1.2)} title="Zoom out (Ctrl −)" {...hoverProps(T)} style={zBtn(T)}>−</button>
+        <button onClick={resetView} title="Reset view (Ctrl 0 resets the zoom)" {...hoverProps(T)} style={{
           ...zBtn(T), width:'auto', padding:'0 10px', fontSize:11, fontVariantNumeric:'tabular-nums', fontWeight:600,
         }}>{Math.round(view.z*100)}%</button>
-        <button onClick={()=>zoomTo(1.2)} title="Zoom in (Ctrl +)" style={zBtn(T)}>+</button>
+        <button onClick={()=>zoomTo(1.2)} title="Zoom in (Ctrl +)" {...hoverProps(T)} style={zBtn(T)}>+</button>
         <div style={{width:1, height:20, background:T.hairline, margin:'0 3px'}}/>
-        <button onClick={fitToNotes} title="Fit all notes to view" style={{...zBtn(T), width:'auto', padding:'0 8px', fontSize:11}}>fit</button>
+        <button onClick={fitToNotes} title="Fit all notes to view" {...hoverProps(T)} style={{...zBtn(T), width:'auto', padding:'0 8px', fontSize:11}}>fit</button>
       </div>
 
       {/* space-held indicator */}
@@ -1762,6 +1816,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             if (onTogglePin) onTogglePin(); else onChange({pinned:!note.pinned});
           }}
           title={note.pinned ? 'Pinned (visible in every folder) · click to unpin' : 'Pin to keep visible in every folder'}
+          {...inkHoverProps(ink)}
           style={{...btnS(ink), padding:2}}>
           {note.pinned ? (
             <img src="./assets/pin-filled.png" width="16" height="16" alt="Pinned"
@@ -1818,6 +1873,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
                 onStartLink && onStartLink();
               }}
               title={myLinks.length ? `${myLinks.length} link${myLinks.length>1?'s':''} · click to add another` : 'Link to another note'}
+              {...inkHoverProps(ink, myLinks.length ? 0.95 : 0.65)}
               style={{...btnS(ink), opacity: myLinks.length ? 0.95 : 0.65, position:'relative'}}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ink} strokeWidth="2" strokeLinecap="round">
                 <path d="M10 13a5 5 0 007 0l3-3a5 5 0 10-7-7l-1 1"/>
@@ -1845,7 +1901,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             }
             onDelete();
           }}
-          title="Delete" style={btnS(ink)}>
+          title="Delete" {...inkHoverProps(ink)} style={btnS(ink)}>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={ink} strokeWidth="2">
             <path d="M6 6l12 12M18 6L6 18"/>
           </svg>
@@ -2070,7 +2126,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           const other = notesById[otherId];
           const arrow = l.from===note.id ? '→' : '←';
           return { label: `${arrow} ${other?.title || '(missing)'}`, onClick: () => onJumpToNote && onJumpToNote(otherId) };
-        }) : [{label:'(no links yet)', onClick:()=>{}}];
+        }) : [{label:'(no links yet)', disabled:true}];
         const candidates = allNotes.filter(n => n.id !== note.id).slice(0, 20);
         return (
           <ContextMenu T={T} x={menu.x} y={menu.y} fixed onClose={()=>setMenu(null)} items={[
@@ -2105,10 +2161,17 @@ function btnS(ink) { return {background:'transparent', border:'none', cursor:'po
 function ColorDots({current, onPick, ink}) {
   return <div style={{display:'flex', gap:4}}>
     {NOTE_COLORS.slice(0,6).map(c => (
-      <button key={c.id} onClick={()=>onPick(c.id)} title={c.name} style={{
+      // 10px targets with no hover feedback at all before issue #49: a ring
+      // in the note's own ink plus a small pop says which one is under the
+      // cursor without changing the swatch colour itself.
+      <button key={c.id} onClick={()=>onPick(c.id)} title={c.name}
+        onMouseEnter={e=>{ e.currentTarget.style.boxShadow = `0 0 0 2px ${withA(ink,.45)}`; e.currentTarget.style.transform = 'scale(1.25)'; }}
+        onMouseLeave={e=>{ e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none'; }}
+        style={{
         width:10, height:10, borderRadius:'50%',
         border: current===c.id ? `1.5px solid ${ink}` : '1px solid rgba(0,0,0,.15)',
         background:c.paper, cursor:'pointer', padding:0,
+        transition:'transform .1s, box-shadow .1s',
       }}/>
     ))}
   </div>;
@@ -2154,11 +2217,15 @@ function ContextMenu({T, x, y, items, onClose, fixed}) {
           {/* NB: background/display of the row button and submenu are driven by
               the .ctx-row rules in the <style> below — they must not also be
               set inline, or the inline value wins over the .hover rules and
-              the hover highlight / submenus can never appear. */}
-          <button onClick={()=>{ it.onClick?.(); if(!it.submenu && !it.keepOpen) onClose(); }} style={{
+              the hover highlight / submenus can never appear. Same for the
+              submenu buttons (.ctx-sub button), which is why neither sets a
+              background of its own. */}
+          <button disabled={!!it.disabled}
+            onClick={()=>{ it.onClick?.(); if(!it.submenu && !it.keepOpen) onClose(); }} style={{
             width:'100%', textAlign:'left', border:'none',
-            padding:'7px 10px', borderRadius:4, cursor:'pointer', fontSize:13,
-            color: it.destructive ? '#c33' : T.panelText,
+            padding:'7px 10px', borderRadius:4, fontSize:13,
+            cursor: it.disabled ? 'default' : 'pointer',
+            color: it.disabled ? T.muted : it.destructive ? '#c33' : T.panelText,
           }}>{it.label}</button>
           {it.submenu && <div className="ctx-sub" style={{
             position:'absolute', left:'100%', top:-4, minWidth:160,
@@ -2166,10 +2233,11 @@ function ContextMenu({T, x, y, items, onClose, fixed}) {
             boxShadow:'0 8px 32px rgba(0,0,0,.15)',
           }}>
             {it.submenu.map((s,j)=>
-              <button key={j} onClick={()=>{s.onClick?.(); onClose();}} style={{
+              <button key={j} disabled={!!s.disabled} onClick={()=>{s.onClick?.(); onClose();}} style={{
                 width:'100%', display:'flex', alignItems:'center', gap:8, textAlign:'left',
-                background:'transparent', border:'none', padding:'6px 10px', borderRadius:4, cursor:'pointer',
-                fontSize:13, color:T.panelText,
+                border:'none', padding:'6px 10px', borderRadius:4,
+                cursor: s.disabled ? 'default' : 'pointer',
+                fontSize:13, color: s.disabled ? T.muted : T.panelText,
               }}>
                 {s.dot && <span style={{width:10, height:10, borderRadius:3, background:s.dot, border:'1px solid rgba(0,0,0,.1)'}}/>}
                 {s.label}
@@ -2178,11 +2246,31 @@ function ContextMenu({T, x, y, items, onClose, fixed}) {
           </div>}
         </div>
       )}
+      {/* Hover/focus painting (issue #49). The highlight is theme-derived —
+          see hoverBg() — because one hard-coded overlay cannot read on both
+          the light panels and the dark terminal one. Keyboard focus paints
+          the same background PLUS an accent outline, so tabbing is never
+          less visible than hovering. Disabled rows opt out of all of it: an
+          inert "(no links yet)" line must not look clickable. */}
       <style>{`
-        .ctx-row > button { background: transparent; }
-        .ctx-row.hover > button { background: rgba(0,0,0,.05); }
+        /* No transition here on purpose: a menu is swept through quickly and
+           a fading highlight lags behind the cursor. */
+        .ctx-row > button, .ctx-sub button { background: transparent; }
+        .ctx-row.hover > button:enabled,
+        .ctx-row > button:enabled:focus-visible,
+        .ctx-sub button:enabled:hover,
+        .ctx-sub button:enabled:focus-visible {
+          background: ${hoverBg(T)};
+          box-shadow: inset 2px 0 0 ${T.accent};
+        }
+        .ctx-row > button:enabled:focus-visible,
+        .ctx-sub button:enabled:focus-visible {
+          outline: 2px solid ${T.accent};
+          outline-offset: -2px;
+        }
+        .ctx-row > button:disabled, .ctx-sub button:disabled { background: transparent; box-shadow: none; }
         .ctx-sub { display: none; }
-        .ctx-row.hover .ctx-sub { display: block; }
+        .ctx-row.hover .ctx-sub, .ctx-row:focus-within .ctx-sub { display: block; }
       `}</style>
     </div>
   );
@@ -2198,8 +2286,12 @@ function ConfirmDialog({T, title, body, onCancel, onConfirm, confirmLabel='Delet
         <div style={{fontWeight:700, fontSize:16, marginBottom:6}}>{title}</div>
         <div style={{fontSize:13, color:T.muted, lineHeight:1.5}}>{body}</div>
         <div style={{display:'flex', gap:8, justifyContent:'flex-end', marginTop:18}}>
-          <button onClick={onCancel} style={{padding:'8px 14px', background:'transparent', border:`1px solid ${T.panelBorder}`, borderRadius:8, fontSize:13, cursor:'pointer', color:T.panelText}}>Cancel</button>
-          <button onClick={onConfirm} style={{padding:'8px 14px', background:'#c33b3b', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer'}}>{confirmLabel}</button>
+          <button onClick={onCancel} {...hoverProps(T)}
+            style={{padding:'8px 14px', background:'transparent', border:`1px solid ${T.panelBorder}`, borderRadius:8, fontSize:13, cursor:'pointer', color:T.panelText, transition:'background .1s'}}>Cancel</button>
+          <button onClick={onConfirm}
+            onMouseEnter={e=>{ e.currentTarget.style.background = '#a32c2c'; }}
+            onMouseLeave={e=>{ e.currentTarget.style.background = '#c33b3b'; }}
+            style={{padding:'8px 14px', background:'#c33b3b', color:'#fff', border:'none', borderRadius:8, fontSize:13, fontWeight:600, cursor:'pointer', transition:'background .1s'}}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -2321,7 +2413,9 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
     })();
     const swatch = isAll ? T.accent : f.hue;
     const idleBg = isTerm ? '#0e1319' : 'rgba(0,0,0,.02)';
-    const hoverBg = isTerm ? '#131a23' : 'rgba(0,0,0,.05)';
+    // Theme-derived (issue #49): the old pair moved the row by 13/255 on
+    // terminal and 8/255 on flat — a hover you had to hunt for.
+    const rowHoverBg = hoverBg(T);
 
     // Clamp the visual indent so very deep trees stay usable in a 300px drawer.
     const indent = Math.min(depth, 5) * 14;
@@ -2363,7 +2457,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
       const washiColor = WASHI[f.hue] || f.hue;
       const paperIdleBg = 'transparent';
       const paperActiveBg = withA(swatch, .14);
-      const paperHoverBg = 'rgba(120,80,40,.06)';
+      const paperHoverBg = rowHoverBg;
       return (
         <div key={f.id}
           data-folder-id={f.id}
@@ -2450,6 +2544,8 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           </div>
           {isActive && (
             <button onClick={(e)=>{e.stopPropagation(); onDeleteFolder(f.id);}} title="Delete folder"
+              onMouseEnter={e=>{ e.currentTarget.style.background = withA('#cc3333', .22); e.currentTarget.style.color = '#c33'; }}
+              onMouseLeave={e=>{ e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.muted; }}
               style={{width:20, height:20, display:'grid', placeItems:'center',
                 background:'transparent', border:'none', cursor:'pointer', color:T.muted,
                 borderRadius:4, fontSize:14, lineHeight:1, padding:0,
@@ -2523,7 +2619,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           boxShadow: zoneShadow,
           transition:'background .1s',
         }}
-        onMouseEnter={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = hoverBg; }}
+        onMouseEnter={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = rowHoverBg; }}
         onMouseLeave={e=>{ if(!isActive && !isDropTarget) e.currentTarget.style.background = idleBg; }}
       >
         <div style={{width:4, borderRadius:2, background:swatch, flex:'none'}}/>
@@ -2553,6 +2649,8 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
           </div>
           {!isAll && isActive && (
             <button onClick={(e)=>{e.stopPropagation(); onDeleteFolder(f.id);}} title="Delete folder"
+              onMouseEnter={e=>{ e.currentTarget.style.background = withA('#cc3333', .22); e.currentTarget.style.color = '#c33'; }}
+              onMouseLeave={e=>{ e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.muted; }}
               style={{width:22, height:22, display:'grid', placeItems:'center',
                 background:'transparent', border:'none', cursor:'pointer', color:T.muted,
                 borderRadius:4, fontSize:14, lineHeight:1, padding:0,
@@ -2566,7 +2664,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
   return (
     <>
       {!open && (
-        <button onClick={()=>setOpen(true)} style={{
+        <button onClick={()=>setOpen(true)} {...hoverProps(T, T.panelBg)} style={{
           position:'absolute', right:0, top:72, zIndex:19000,
           width:32, height:96, background:T.panelBg, color:T.panelText,
           border:`1px solid ${T.panelBorder}`, borderRight:'none',
@@ -2604,11 +2702,11 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
               borderBottom:'1px solid rgba(120,80,40,.14)',
             }}>
               <span style={{flex:1}}>Folders</span>
-              <button onClick={onCreateFolder} title="New folder" style={{
+              <button onClick={onCreateFolder} title="New folder" {...hoverProps(T)} style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:18, lineHeight:1, padding:0, borderRadius:4,
               }}>+</button>
-              <button onClick={()=>setOpen(false)} title="Hide" style={{
+              <button onClick={()=>setOpen(false)} title="Hide" {...hoverProps(T)} style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
               }}>›</button>
@@ -2619,11 +2717,11 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
               <div style={{fontSize:14, fontWeight:700, color:T.panelText, flex:1, letterSpacing:isTerm?0.5:0}}>
                 {isTerm ? '// folders' : 'Folders'}
               </div>
-              <button onClick={onCreateFolder} title="New folder" style={{
+              <button onClick={onCreateFolder} title="New folder" {...hoverProps(T)} style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:18, lineHeight:1, padding:0, borderRadius:4,
               }}>+</button>
-              <button onClick={()=>setOpen(false)} title="Hide" style={{
+              <button onClick={()=>setOpen(false)} title="Hide" {...hoverProps(T)} style={{
                 width:24, height:24, background:'transparent', border:'none', cursor:'pointer',
                 color:T.muted, fontSize:16, lineHeight:1, padding:0, borderRadius:4,
               }}>›</button>
@@ -2652,17 +2750,18 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
               border: `1px dashed ${isPaper ? 'rgba(120,80,40,.28)' : T.panelBorder}`,
               fontSize:12, fontWeight:600, cursor:'pointer',
               display:'flex', alignItems:'center', justifyContent:'center', gap:6,
-              transition:'background .12s, color .12s, transform .12s',
+              transition:'background .12s, border-color .12s, color .12s, transform .12s',
               fontFamily: 'inherit',
             }}
               onMouseEnter={e=>{
-                e.currentTarget.style.background = isTerm ? '#131a23'
-                  : (isPaper ? 'rgba(120,80,40,.06)' : 'rgba(0,0,0,.04)');
+                e.currentTarget.style.background = hoverBg(T);
+                e.currentTarget.style.borderColor = T.accent;
                 e.currentTarget.style.color = T.panelText;
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={e=>{
                 e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.borderColor = isPaper ? 'rgba(120,80,40,.28)' : T.panelBorder;
                 e.currentTarget.style.color = T.muted;
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
@@ -2706,7 +2805,7 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
                     onClick: ()=>{ expandFolder(r.id); onMoveFolderToParent(fid, r.id); },
                   });
                 }
-                return targets.length ? targets : [{label:'No other folder to move into'}];
+                return targets.length ? targets : [{label:'No other folder to move into', disabled:true}];
               })()}
             />
           )}
@@ -2719,23 +2818,34 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
             fontSize:11, color:T.muted, display:'flex', alignItems:'center', gap:8,
           }}>
             {isPaper ? (
-              <button onClick={onCreateNote} style={{
+              <button onClick={onCreateNote}
+                onMouseEnter={e=>{ e.currentTarget.style.background = mixHex('#fdf4c5', '#000000', .10); }}
+                onMouseLeave={e=>{ e.currentTarget.style.background = '#fdf4c5'; }}
+                style={{
                 flex:1, height:30, background:'#fdf4c5', color:'#4a3a12',
                 border:'1px solid rgba(120,80,40,.28)', borderRadius:6,
                 padding:'0 12px', cursor:'pointer',
                 display:'flex', alignItems:'center', justifyContent:'center', gap:6,
                 fontSize:12, fontWeight:700, whiteSpace:'nowrap',
                 boxShadow:'0 1px 0 #fff inset, 0 2px 0 rgba(60,40,20,.06), 0 6px 14px rgba(60,40,20,.08)',
+                transition:'background .1s',
               }}>
                 <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span>
                 new sticky
                 <kbd style={{fontFamily:'ui-monospace, monospace', fontSize:9, background:'rgba(60,40,20,.18)', color:'#4a3a12', padding:'1px 4px', borderRadius:3, marginLeft:2}}>N</kbd>
               </button>
             ) : (
-              <button onClick={onCreateNote} style={{
+              <button onClick={onCreateNote}
+                // A solid accent button can't take the translucent panel
+                // hover; it shifts the accent itself instead — darker on the
+                // light themes, lighter on the dark one. (issue #49)
+                onMouseEnter={e=>{ e.currentTarget.style.background = mixHex(T.accent, isDarkSurface(T.panelBg) ? '#ffffff' : '#000000', .18); }}
+                onMouseLeave={e=>{ e.currentTarget.style.background = T.accent; }}
+                style={{
                 flex:1, height:28, padding:'0 10px', borderRadius: isTerm?2:6,
                 background:T.accent, color: isTerm?'#0a0c10':'#fff', border:'none',
                 fontWeight:700, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                transition:'background .1s',
               }}>
                 <span style={{fontSize:14, lineHeight:1, marginTop:-1}}>+</span>
                 new sticky
@@ -2762,9 +2872,9 @@ function TweakPanel({T, tweaks, update, onClose}) {
       <div style={{fontWeight:700, fontSize:13, marginBottom:12, display:'flex', alignItems:'center', gap:8}}>
         <span style={{width:8, height:8, borderRadius:'50%', background:T.accent}}/>Preferences
         {onClose && (
-          <button onClick={onClose} aria-label="Close preferences" style={{
+          <button onClick={onClose} aria-label="Close preferences" {...hoverProps(T)} style={{
             marginLeft:'auto', background:'none', border:'none', cursor:'pointer',
-            fontSize:16, lineHeight:1, color:T.panelText, opacity:.6, padding:2,
+            fontSize:16, lineHeight:1, color:T.panelText, opacity:.6, padding:2, borderRadius:4,
           }}>×</button>
         )}
       </div>
@@ -2803,15 +2913,24 @@ function Label({children}) {
 }
 function Segmented({T, value, onChange, options}) {
   return (
-    <div style={{display:'flex', background:'rgba(0,0,0,.04)', padding:2, borderRadius:8, border:`1px solid ${T.panelBorder}`, gap:2}}>
-      {options.map(o => (
-        <button key={o.id} onClick={()=>onChange(o.id)} style={{
-          flex:1, border:'none', padding:'6px 8px', fontSize:12, borderRadius:6,
-          background: value===o.id ? T.panelBg : 'transparent',
-          boxShadow: value===o.id ? `0 1px 2px rgba(0,0,0,.08), 0 0 0 1px ${T.panelBorder}` : 'none',
-          color:T.panelText, fontWeight: value===o.id?600:500, cursor:'pointer',
-        }}>{o.label}</button>
-      ))}
+    <div style={{display:'flex', background: withA(hoverInk(T), .07), padding:2, borderRadius:8, border:`1px solid ${T.panelBorder}`, gap:2}}>
+      {options.map(o => {
+        const active = value===o.id;
+        // Only the inactive segments take a hover — repainting the selected
+        // one would read as "this is now something else". (issue #49)
+        return (
+          <button key={o.id} onClick={()=>onChange(o.id)}
+            onMouseEnter={e=>{ if(!active) e.currentTarget.style.background = hoverBg(T); }}
+            onMouseLeave={e=>{ if(!active) e.currentTarget.style.background = 'transparent'; }}
+            style={{
+              flex:1, border:'none', padding:'6px 8px', fontSize:12, borderRadius:6,
+              background: active ? T.panelBg : 'transparent',
+              boxShadow: active ? `0 1px 2px rgba(0,0,0,.08), 0 0 0 1px ${T.panelBorder}` : 'none',
+              color:T.panelText, fontWeight: active?600:500, cursor:'pointer',
+              transition:'background .1s',
+            }}>{o.label}</button>
+        );
+      })}
     </div>
   );
 }

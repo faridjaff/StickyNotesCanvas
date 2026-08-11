@@ -659,10 +659,22 @@ function hashRot(id) { let h=0; for (let i=0;i<id.length;i++) h=(h*31+id.charCod
 function hasTextSelection(sel) {
   return !!sel && !sel.isCollapsed && sel.toString().length > 0;
 }
+// '#abc' / 'abc' / '#aabbcc' → 'aabbcc'. Shorthand hex has to be expanded or
+// every colour helper below yields a NaN channel — note ink is '#222' for the
+// white note colour, which is exactly where that used to bite.
+function normHex(hex) {
+  const h = String(hex).replace('#','').trim();
+  return h.length === 3 ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h;
+}
+function hexChannels(hex) {
+  const h = normHex(hex);
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
 function withA(hex, a) {
-  const h = hex.replace('#',''); const r=parseInt(h.slice(0,2),16), g=parseInt(h.slice(2,4),16), b=parseInt(h.slice(4,6),16);
+  const [r,g,b] = hexChannels(hex);
   return `rgba(${r},${g},${b},${a})`;
 }
+
 
 /* ---------- CANVAS ZOOM ----------
  * One clamp and one anchored-zoom formula shared by every zoom path on the
@@ -705,10 +717,6 @@ function isTextEntryElement(el) {
 //   Ctrl/Cmd and '-' or '_'   → out
 //   Ctrl/Cmd and '0'          → reset
 //
-// their e.key is layout- and NumLock-dependent; some engines still report
-// the legacy 'Add' / 'Subtract' names, so those are accepted as keys too.
-// and Ctrl+Insert is copy.
-//
 // Held Alt disqualifies the chord — Ctrl+Alt is AltGr on Windows/Linux
 // layouts, where it types characters rather than invoking shortcuts.
 //
@@ -726,6 +734,38 @@ function zoomActionForKey(e, activeElement) {
     case '0':           return 'reset';
     default:            return null;
   }
+}
+
+/* ---------- HOVER AFFORDANCE (issue #49) ---------- */
+// Every menu, row and button used to share one hard-coded rgba(0,0,0,.05)
+// hover. That darkens a light panel by a barely-there 5% and does nothing at
+// all on the dark terminal panel (#141a22 → #131920: a 2/255 step, which is
+// what the issue's screenshot shows — hovered and unhovered items identical).
+// A hover has to move AWAY from the surface it sits on: darker on a light
+// panel, lighter on a dark one. So the overlay ink is derived from the theme
+// — the accent pulled halfway to black or to white depending on the panel —
+// and laid over the surface at a fixed alpha. Each theme keeps its own
+// character (warm on paper, blue on flat, green on terminal) and every theme
+// gets a step of ~60+ in RGB distance instead of 2.
+// Translucent on purpose: hover backgrounds land on note paper, the drawer's
+// grain texture and panels alike, and must composite over all of them.
+function isDarkSurface(hex) {
+  const [r,g,b] = hexChannels(hex);
+  return (0.2126*r + 0.7152*g + 0.0722*b) / 255 < 0.5;
+}
+function mixHex(a, b, t) {
+  const A = hexChannels(a), B = hexChannels(b);
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  return '#' + A.map((v,i) => clamp(v + (B[i]-v)*t).toString(16).padStart(2,'0')).join('');
+}
+const HOVER_ALPHA = 0.2;
+// Hover background for a control sitting on a themed panel (menus, drawer
+// rows, toolbar buttons). `T` is a themeTokens() object.
+function hoverBg(T, alpha = HOVER_ALPHA) {
+  return withA(hoverInk(T), alpha);
+}
+function hoverInk(T) {
+  return mixHex(T.accent, isDarkSurface(T.panelBg) ? '#ffffff' : '#000000', 0.5);
 }
 
 const STICKY_CLIPBOARD_MARKER = '<!-- sticky-notes/v1 -->';
@@ -838,4 +878,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, imageMimeForFile, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, WHATS_NEW_ID, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });
+Object.assign(window, { FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, isDarkSurface, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });

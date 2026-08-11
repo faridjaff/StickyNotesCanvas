@@ -1,8 +1,11 @@
-// Text-selection gestures on rendered note bodies, ported from the CDP
-// debugging probe. Current master behavior: while a selection drag is
-// outside the source note, an rAF referee snaps the selection end to the
-// note's boundary (start for exits above/left, end for exits below/right),
-// and body.sel-lock makes every other note unselectable (containment).
+// Mouse-gesture outcomes on real notes: text-selection drags (ported from
+// the CDP debugging probe) and, at the end of the file, the context menu's
+// hover contrast.
+//
+// Selection behavior on current master: while a selection drag is outside
+// the source note, an rAF referee snaps the selection end to the note's
+// boundary (start for exits above/left, end for exits below/right), and
+// body.sel-lock makes every other note unselectable (containment).
 // Assertions are on OUTCOMES only (direction, containment, text), never on
 // selection-write counts.
 import { test, before, after } from 'node:test';
@@ -112,4 +115,192 @@ test('double-click enters edit mode; Escape leaves it', async () => {
   // Back in preview mode with the body unchanged.
   const text = await app.evaljs(`document.querySelector('[data-note-id="${NOTE.plain}"] .md-body').textContent`);
   assert.match(text, /alpha bravo charlie delta/);
+});
+
+/* ---------------- context-menu hover contrast (issue #49) ----------------
+ * The report: "there is no real difference between the currently selected
+ * and unselected option" — the hovered row of the note's context menu
+ * looked identical to its neighbours, worst of all on the dark terminal
+ * theme where the old rgba(0,0,0,.05) overlay moved the row by 2/255.
+ * Colour choices are a matter of taste and not worth asserting, but the
+ * complaint itself is measurable: the row under the cursor must be a
+ * clearly different colour from a row that is not, in every theme.
+ */
+
+// Effective (composited) paint of every top-level menu row: the row button's
+// background is translucent, so it is flattened onto the menu panel here,
+// exactly as the eye sees it.
+const menuRows = () => app.evaljs(`(() => {
+  const btns = [...document.querySelectorAll('.ctx-row > button')];
+  if (!btns.length) return null;
+  const px = (s) => (s.match(/[\\d.]+/g) || []).map(Number);
+  const panel = px(getComputedStyle(btns[0].closest('.ctx-row').parentElement).backgroundColor);
+  const flat = (c) => { const a = c.length > 3 ? c[3] : 1; return [0,1,2].map(i => a*c[i] + (1-a)*panel[i]); };
+  return btns.map(b => ({
+    label: b.textContent.trim(),
+    rgb: flat(px(getComputedStyle(b).backgroundColor)),
+    accent: getComputedStyle(b).boxShadow !== 'none',
+    cursor: getComputedStyle(b).cursor,
+    disabled: b.disabled,
+    hovered: b.parentElement.classList.contains('hover'),
+    subOpen: !!b.parentElement.querySelector('.ctx-sub') &&
+      getComputedStyle(b.parentElement.querySelector('.ctx-sub')).display !== 'none',
+  }));
+})()`);
+
+const dist = (a, b) => Math.sqrt(a.reduce((s, v, i) => s + (v - b[i]) ** 2, 0));
+
+// Centre of the first element matching `sel` whose trimmed text is `text`.
+const centreOf = (sel, text) => app.evaljs(`(() => {
+  const el = [...document.querySelectorAll(${JSON.stringify(sel)})]
+    .find(e => e.textContent.trim() === ${JSON.stringify(text)});
+  if (!el) return null;
+  const b = el.getBoundingClientRect();
+  return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+})()`);
+
+const rightClick = async (x, y) => {
+  await app.cmd('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'right', buttons: 2, clickCount: 1 });
+  await app.cmd('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'right', buttons: 2, clickCount: 1 });
+};
+
+const openNoteMenu = async () => {
+  const at = await app.evaljs(`(() => {
+    const b = document.querySelector('[data-note-id="${NOTE.plain}"]').getBoundingClientRect();
+    return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + 8) };
+  })()`);
+  await rightClick(at.x, at.y);
+  await app.pollUntil(async () => (await menuRows() || []).length > 2,
+    { timeout: 3000, interval: 50, label: 'note context menu to open' });
+};
+
+// Move the pointer onto a row and return the settled paint of the whole
+// menu. Two moves, because a single hop straight from the right-click point
+// onto the menu that has just appeared under the cursor does not always make
+// Chromium re-run its hover hit test. Then poll until the row is both marked
+// hovered AND has stopped changing colour: the highlight fades in over .1s
+// and a snapshot taken mid-transition still reads as transparent.
+const hoverRow = async (label) => {
+  const at = await centreOf('.ctx-row > button', label);
+  assert.ok(at, `no menu row labelled ${label}`);
+  await app.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x - 4, y: at.y });
+  await app.cmd('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+  let previous = null;
+  return app.pollUntil(async () => {
+    const rows = await menuRows();
+    const hot = rows && rows.find(r => r.label === label && r.hovered);
+    if (!hot) { previous = null; return null; }
+    const paint = hot.rgb.join(',');
+    const settled = previous === paint;
+    previous = paint;
+    return settled ? rows : null;
+  }, { timeout: 3000, interval: 60, label: `row "${label}" to take hover` });
+};
+
+// Click far from the menu to dismiss it (ContextMenu closes on an outside
+// mousedown; it has no Escape handler).
+const closeMenu = async () => {
+  await app.click(1200, 760);
+  await app.pollUntil(async () => !(await menuRows()),
+    { timeout: 3000, interval: 50, label: 'context menu to close' });
+};
+
+// Switch themes through the real UI: status bar "preferences" opens the
+// panel, the Visual style segment switches, "preferences" closes it again.
+// --sticky-accent is written from the live theme tokens, so it is the
+// app's own signal that the new theme has landed.
+const onTheme = (accent) =>
+  app.evaljs(`document.documentElement.style.getPropertyValue('--sticky-accent') === '${accent}'`);
+
+const setTheme = async (label, accent) => {
+  if (await onTheme(accent)) return;          // already there — the seeded default
+  const prefs = await centreOf('button', 'preferences');
+  await app.click(prefs.x, prefs.y);
+  const seg = await app.pollUntil(() => centreOf('button', label),
+    { timeout: 3000, interval: 50, label: `${label} theme button` });
+  await app.click(seg.x, seg.y);
+  await app.pollUntil(() => onTheme(accent),
+    { timeout: 3000, interval: 50, label: `${label} theme to apply` });
+  const again = await centreOf('button', 'preferences');
+  await app.click(again.x, again.y);
+  await app.pollUntil(async () => !(await centreOf('button', label)),
+    { timeout: 3000, interval: 50, label: 'preferences panel to close' });
+};
+
+// The seeded default plus the dark theme the report was worst on. Every
+// theme's hover MATHS is covered without a GUI in tests/hover.test.mjs; what
+// needs a real window is that the maths is actually wired to the menu, and
+// that it survives a light→dark switch. Flat is left to the unit test to
+// keep this suite fast.
+const THEMES = [
+  { label: 'Paper', accent: '#b8621b' },
+  { label: 'Terminal', accent: '#8fd27a' },
+];
+
+test('the hovered context-menu row is clearly different from its neighbours', async () => {
+  for (const theme of THEMES) {
+    await setTheme(theme.label, theme.accent);
+    await openNoteMenu();
+    // One hover carries both checks: the row is a submenu row, so the same
+    // gesture proves the highlight AND that hovering still opens submenus
+    // (they share the .ctx-row.hover class, so a careless fix breaks both).
+    const rows = await hoverRow('Change color ▶');
+    const hot = rows.find(r => r.hovered);
+    const cold = rows.filter(r => !r.hovered);
+
+    assert.equal(rows.filter(r => r.hovered).length, 1, `${theme.label}: exactly one row may be hovered`);
+    assert.ok(cold.length >= 3, `${theme.label}: needs unhovered siblings to compare against`);
+    for (const c of cold) {
+      // 45 is far above the old behaviour, which scored 2 on terminal and
+      // ~21 on the light themes — i.e. this fails on the pre-fix build.
+      assert.ok(dist(hot.rgb, c.rgb) > 45,
+        `${theme.label}: hovered "${hot.label}" ${hot.rgb.map(Math.round)} is only ` +
+        `${dist(hot.rgb, c.rgb).toFixed(1)} from unhovered "${c.label}" ${c.rgb.map(Math.round)}`);
+    }
+    assert.equal(hot.accent, true, `${theme.label}: the hovered row also carries the accent edge`);
+    assert.ok(cold.every(c => !c.accent), `${theme.label}: unhovered rows carry no accent edge`);
+    assert.deepEqual(rows.filter(r => r.subOpen).map(r => r.label), ['Change color ▶'],
+      `${theme.label}: hovering a submenu row opens exactly that submenu`);
+
+    await closeMenu();
+  }
+  await setTheme('Paper', '#b8621b');   // leave the app as the seed found it
+});
+
+test('hovering an inert menu row does not make it look clickable', async () => {
+  // The folder drawer's "Move to…" menu has nowhere to move the only seeded
+  // folder, so it renders its one inert line. A highlight there would
+  // promise an action that does not exist.
+  const tab = await app.pollUntil(() => centreOf('button', 'FOLDERS · 1'),
+    { timeout: 3000, interval: 50, label: 'folders tab' });
+  await app.click(tab.x, tab.y);
+  const row = await app.pollUntil(() => app.evaljs(`(() => {
+    const el = document.querySelector('[data-folder-id="e2e"]');
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2) };
+  })()`), { timeout: 3000, interval: 50, label: 'folder row in the open drawer' });
+
+  await rightClick(row.x, row.y);
+  const moveTo = await app.pollUntil(() => centreOf('.ctx-row > button', 'Move to…'),
+    { timeout: 3000, interval: 50, label: 'folder context menu' });
+  await app.click(moveTo.x, moveTo.y);
+
+  const label = 'No other folder to move into';
+  const before = await app.pollUntil(async () => {
+    const rows = await menuRows();
+    return rows && rows.some(r => r.label === label) ? rows : null;
+  }, { timeout: 3000, interval: 50, label: 'the empty "move to" menu' });
+
+  const after = await hoverRow(label);
+  const inert = after.find(r => r.label === label);
+  assert.equal(inert.disabled, true, 'an unavailable option must not be an active button');
+  assert.deepEqual(inert.rgb, before.find(r => r.label === label).rgb,
+    'hovering an inert row must not paint a highlight on it');
+  assert.equal(inert.accent, false, 'no accent edge on an inert row either');
+  assert.equal(inert.cursor, 'default', 'and no pointer cursor promising a click');
+
+  await closeMenu();
+  const hide = await centreOf('button', '›');
+  await app.click(hide.x, hide.y);   // restore the closed drawer
 });

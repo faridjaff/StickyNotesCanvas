@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
   load: loadNotes, save: saveNotes,
-  saveImage, sweepOrphanImages, IMAGE_FILE_RE,
+  saveImage, saveImageFromFile, sweepOrphanImages, IMAGE_FILE_RE,
 } = require('./storage.js');
 
 // E2E test hook: when STICKY_USER_DATA is set, store all app data (notes.json,
@@ -249,6 +249,41 @@ ipcMain.handle('images:save-clipboard', async () => {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+});
+
+// The one place a picture that lives on disk gets stored, shared by the two
+// file routes below. Reading happens here, in main, because that is where
+// the flatpak portals' file access lands: a path handed over by a drag-and-
+// drop has been rewritten by the document portal to /run/user/<uid>/doc/…,
+// and a file picked through the file-chooser portal is granted to this
+// process — the app itself has no filesystem permission at all.
+function storeImageFile(filePath) {
+  if (typeof filePath !== 'string' || !filePath) return { ok: false, error: 'no file path' };
+  try {
+    return { ok: true, ref: `sticky-image://${saveImageFromFile(imagesDir(), filePath)}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// An image file dropped onto a note. The renderer resolves the File to a
+// path with webUtils.getPathForFile (Electron 32 removed File.path) and
+// sends it here; if the drop carries no usable path it falls back to
+// reading the File's own bytes and the images:save handler above.
+ipcMain.handle('images:save-file', async (_e, filePath) => storeImageFile(filePath));
+
+// Context-menu "Insert image…": one round trip — main opens the picker
+// (the file-chooser portal under flatpak), reads the chosen picture, stores
+// it, and returns the reference the note body embeds.
+ipcMain.handle('images:pick', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Insert image',
+    buttonLabel: 'Insert',
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+    properties: ['openFile'],
+  });
+  if (canceled || !filePaths || !filePaths.length) return { ok: false, canceled: true };
+  return storeImageFile(filePaths[0]);
 });
 
 ipcMain.handle('notes:export', async (_e, data) => {

@@ -5,7 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
-import { imageFileName, saveImage, sweepOrphanImages, IMAGE_FILE_RE } from '../storage.js';
+import {
+  imageFileName, mimeForImageName, saveImage, saveImageFromFile,
+  sweepOrphanImages, IMAGE_FILE_RE, MAX_IMAGE_BYTES,
+} from '../storage.js';
 
 // Same vm-sandbox loading pattern as markdown.test.mjs: the vendored
 // markdown-it UMD build must be evaluated first, exactly like the <script>
@@ -15,7 +18,7 @@ const sandbox = { React: {}, window: {}, document: {}, navigator: {}, console, M
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(dir, '..', 'vendor', 'markdown-it.min.js'), 'utf8'), sandbox);
 vm.runInContext(fs.readFileSync(path.join(dir, '..', 'utils.jsx'), 'utf8'), sandbox);
-const { mdToHtml, openWebLink } = sandbox.window;
+const { mdToHtml, openWebLink, imageMimeForFile } = sandbox.window;
 
 const REF = 'sticky-image://0123456789abcdef.png';
 
@@ -111,6 +114,68 @@ test('surrounding emphasis still renders and never eats the reference', () => {
     `<p dir="auto"><em>a <img src="${REF}" alt=""> b</em></p>`);
 });
 
+/* -------- imageMimeForFile: the renderer's gate on a dropped/picked FILE --------
+ * Pure helper (utils.jsx) behind both file routes into a note: drag-and-drop
+ * and the "Insert image…" picker. Answers "is this a picture this app can
+ * store?" with the canonical mime type to store it as, or null.
+ */
+
+test('a supported reported mime type is taken as-is', () => {
+  assert.equal(imageMimeForFile('shot.png',  'image/png'),  'image/png');
+  assert.equal(imageMimeForFile('shot.jpg',  'image/jpeg'), 'image/jpeg');
+  assert.equal(imageMimeForFile('anim.gif',  'image/gif'),  'image/gif');
+  assert.equal(imageMimeForFile('pic.webp',  'image/webp'), 'image/webp');
+});
+
+test('the mime type is matched case-insensitively and without its parameters', () => {
+  assert.equal(imageMimeForFile('shot.png', 'IMAGE/PNG'), 'image/png');
+  assert.equal(imageMimeForFile('shot.png', ' image/png; charset=binary '), 'image/png');
+});
+
+test('a supported mime is enough on its own — no extension needed', () => {
+  // A Wayland/portal drop can hand over a name with no extension at all.
+  assert.equal(imageMimeForFile('screenshot', 'image/png'), 'image/png');
+  assert.equal(imageMimeForFile('', 'image/webp'), 'image/webp');
+});
+
+test('the extension decides when the reported type is missing or unsupported', () => {
+  assert.equal(imageMimeForFile('shot.png', ''), 'image/png');
+  assert.equal(imageMimeForFile('shot.png', undefined), 'image/png');
+  assert.equal(imageMimeForFile('/run/user/1000/doc/ab12/photo.jpeg', ''), 'image/jpeg');
+  assert.equal(imageMimeForFile('photo.jpg', 'application/octet-stream'), 'image/jpeg');
+  assert.equal(imageMimeForFile('SHOT.PNG', ''), 'image/png');
+  assert.equal(imageMimeForFile('a.b.c.webp', ''), 'image/webp');
+});
+
+test('.jpeg and .jpg both mean image/jpeg', () => {
+  assert.equal(imageMimeForFile('a.jpeg', ''), 'image/jpeg');
+  assert.equal(imageMimeForFile('a.jpg', ''), 'image/jpeg');
+});
+
+test('anything that is not a supported picture is null', () => {
+  assert.equal(imageMimeForFile('drawing.svg', 'image/svg+xml'), null);
+  assert.equal(imageMimeForFile('scan.tiff', 'image/tiff'), null);
+  assert.equal(imageMimeForFile('paper.pdf', 'application/pdf'), null);
+  assert.equal(imageMimeForFile('notes.txt', 'text/plain'), null);
+  assert.equal(imageMimeForFile('shot.png.exe', ''), null);
+  assert.equal(imageMimeForFile('Pictures', ''), null,   'a dropped folder has no extension');
+  assert.equal(imageMimeForFile('archive.tar.gz', ''), null);
+  assert.equal(imageMimeForFile('', ''), null);
+  assert.equal(imageMimeForFile(null, null), null);
+  assert.equal(imageMimeForFile(undefined, undefined), null);
+});
+
+test('imageMimeForFile agrees with storage.js on every supported type', () => {
+  // The renderer helper mirrors storage.js's tables by hand (utils.jsx can't
+  // require a node module) — this is the guard against the two drifting.
+  const b = Buffer.from('x');
+  for (const mime of ['image/png', 'image/jpeg', 'image/gif', 'image/webp']) {
+    const ext = imageFileName(b, mime).split('.')[1];
+    assert.equal(imageMimeForFile(`pic.${ext}`, ''), mime, `.${ext} should mean ${mime}`);
+    assert.equal(mimeForImageName(`pic.${ext}`), mime, `storage disagrees about .${ext}`);
+  }
+});
+
 /* -------- storage: content-hash naming -------- */
 
 test('imageFileName is deterministic: 16 hex chars + mime extension', () => {
@@ -168,6 +233,75 @@ test('saveImage creates the images dir if missing', () => {
     assert.ok(fs.existsSync(path.join(d, name)));
   } finally {
     fs.rmSync(path.dirname(path.dirname(d)), { recursive: true, force: true });
+  }
+});
+
+/* -------- storage: reading a picture off disk (drop / "Insert image…") --------
+ * saveImageFromFile is everything the images:save-file and images:pick IPC
+ * handlers do once a path is in hand — the part of the picker flow that can
+ * be tested without a human clicking through a portal dialog.
+ */
+
+test('saveImageFromFile stores a file by path exactly like the pasted bytes would', () => {
+  const d = tmpDir();
+  try {
+    const src = path.join(d, 'holiday.PNG');
+    fs.writeFileSync(src, 'picture-bytes');
+    const name = saveImageFromFile(path.join(d, 'images'), src);
+    assert.equal(name, imageFileName(Buffer.from('picture-bytes'), 'image/png'),
+      'the stored name is the content hash, whatever the source file was called');
+    assert.ok(IMAGE_FILE_RE.test(name));
+    assert.equal(fs.readFileSync(path.join(d, 'images', name), 'utf8'), 'picture-bytes');
+    // Same picture again (dropped twice, or dropped then picked): one file.
+    assert.equal(saveImageFromFile(path.join(d, 'images'), src), name);
+    assert.equal(fs.readdirSync(path.join(d, 'images')).length, 1);
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('saveImageFromFile maps the extension to the stored type, .jpeg included', () => {
+  const d = tmpDir();
+  try {
+    for (const [file, ext] of [['a.jpeg', 'jpg'], ['b.jpg', 'jpg'], ['c.gif', 'gif'], ['d.webp', 'webp']]) {
+      fs.writeFileSync(path.join(d, file), file);
+      assert.match(saveImageFromFile(path.join(d, 'images'), path.join(d, file)),
+        new RegExp(`\\.${ext}$`));
+    }
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('saveImageFromFile refuses everything that is not a supported picture', () => {
+  const d = tmpDir();
+  const images = path.join(d, 'images');
+  try {
+    fs.writeFileSync(path.join(d, 'drawing.svg'), '<svg/>');
+    fs.writeFileSync(path.join(d, 'noext'), 'x');
+    fs.writeFileSync(path.join(d, 'empty.png'), '');
+    fs.mkdirSync(path.join(d, 'folder.png'));
+    assert.throws(() => saveImageFromFile(images, path.join(d, 'drawing.svg')), /unsupported image type/);
+    assert.throws(() => saveImageFromFile(images, path.join(d, 'noext')),       /unsupported image type/);
+    assert.throws(() => saveImageFromFile(images, path.join(d, 'empty.png')),   /empty/);
+    assert.throws(() => saveImageFromFile(images, path.join(d, 'folder.png')),  /not a file/);
+    assert.throws(() => saveImageFromFile(images, path.join(d, 'gone.png')),    /ENOENT/);
+    assert.throws(() => saveImageFromFile(images, ''),                          /unsupported image type/);
+    assert.ok(!fs.existsSync(images), 'a rejected file must not even create the images dir');
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('saveImageFromFile refuses an absurdly large picture instead of reading it', () => {
+  const d = tmpDir();
+  try {
+    const big = path.join(d, 'huge.png');
+    fs.writeFileSync(big, '');
+    fs.truncateSync(big, MAX_IMAGE_BYTES + 1);   // sparse: no real disk used
+    assert.throws(() => saveImageFromFile(path.join(d, 'images'), big), /too large/);
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
   }
 });
 

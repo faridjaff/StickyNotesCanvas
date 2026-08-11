@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('stickyAPI', {
   load:       () => ipcRenderer.invoke('notes:load'),
@@ -15,6 +15,22 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   // Save the clipboard's image without touching the renderer's File object,
   // which is unreadable in the flatpak sandbox. Preferred paste path.
   saveClipboardImage: () => ipcRenderer.invoke('images:save-clipboard'),
+  // Store an image FILE by path: main reads it and returns { ok, ref }.
+  // Preferred route for a file dropped on a note — under flatpak the path
+  // is the document-portal one the drop was rewritten to, which main may
+  // read even though the app has no filesystem permission of its own.
+  saveImageFile: (filePath) => ipcRenderer.invoke('images:save-file', filePath),
+  // Absolute path behind a dropped File. Electron 32 removed File.path;
+  // webUtils.getPathForFile replaces it and must be called here, in the
+  // preload — '' when the drop carries no real path, which tells the
+  // renderer to fall back to reading the File's bytes itself.
+  pathForFile: (file) => {
+    try { return webUtils.getPathForFile(file) || ''; } catch { return ''; }
+  },
+  // Context-menu "Insert image…": main opens the image picker (the
+  // file-chooser portal under flatpak), reads and stores the chosen file,
+  // and resolves { ok, ref } / { ok:false, canceled:true }.
+  pickImage: () => ipcRenderer.invoke('images:pick'),
 
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.

@@ -380,6 +380,38 @@ function firstStrongDir(text = '') {
   }
   return 'ltr';
 }
+/* ---------- Pictures that arrive as a FILE (drag-and-drop, "Insert image…") ----------
+ * Pasting hands the app bytes plus a mime type; a dropped or picked file
+ * hands it a name that may or may not come with one. This is the renderer's
+ * gate on such a file — is it a picture this app can store and render? The
+ * extensions mirror storage.js's IMAGE_EXT_BY_MIME (the main process's own
+ * gate, which also decides the stored file's extension); ".jpeg" is the one
+ * extra spelling and stores as image/jpeg exactly like ".jpg". Keep the two
+ * lists in step.
+ */
+const IMAGE_MIME_BY_EXT = {
+  png:  'image/png',
+  jpg:  'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif:  'image/gif',
+  webp: 'image/webp',
+};
+
+// Canonical mime type to store `name` as, or null when it isn't a supported
+// picture (an svg, a pdf, a folder, a bare name with no extension…). Pure.
+// `name` may be a filename or a full path; `mime` is whatever the drop or
+// the File object reported — often empty (a folder, some Wayland drops) or
+// oddly cased, so a supported reported type wins and the extension is the
+// fallback, never the other way round.
+function imageMimeForFile(name, mime) {
+  const reported = String(mime == null ? '' : mime).toLowerCase().split(';')[0].trim();
+  for (const known of Object.values(IMAGE_MIME_BY_EXT)) {
+    if (reported === known) return known;
+  }
+  const m = /\.([a-z0-9]+)$/i.exec(String(name == null ? '' : name).trim());
+  return (m && IMAGE_MIME_BY_EXT[m[1].toLowerCase()]) || null;
+}
+
 /* ---------- Browser-side file helpers (used when window.stickyAPI is absent) ---------- */
 function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
@@ -741,4 +773,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, WHATS_NEW_ID, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, imageMimeForFile, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, WHATS_NEW_ID, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults });

@@ -1179,6 +1179,7 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
               }
             }}
             onChange={(patch)=>updateNote(n.id, patch)}
+            onSnapshot={takeSnapshot}
             onTogglePin={()=>{ takeSnapshot && takeSnapshot(); updateNote(n.id, {pinned: !n.pinned}); }}
             onDelete={()=>onDeleteNote(n.id)}
             onLinkClick={jumpToNote}
@@ -1359,7 +1360,7 @@ function startPointerDrag(e, onMove, onEnd) {
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
   bringGroupToFront,
   onFocus, onChange, onTogglePin, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
-  allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote, onCopy}) {
+  allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote, onCopy, onSnapshot}) {
   const zRef = useRef(zoom); zRef.current = zoom;
   const [editing, setEditing] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1374,6 +1375,147 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
   const bodyBoxRef   = useRef(null);
   useEffect(() => { if (editingTitle) origTitleRef.current = note.title; }, [editingTitle]);
   useEffect(() => { if (editing)      origBodyRef.current  = note.body;  }, [editing]);
+
+  /* ---------- Pictures from a FILE: drag-and-drop and "Insert image…" ----------
+   * Pasting a picture already works (the textarea's onPaste, which hands the
+   * clipboard to the main process). These two routes cover the other way
+   * people have a picture — as a file. Both end at the same insert, and both
+   * are written to fail soft: any failure warns to the console and leaves
+   * the note byte-for-byte as it was. Nothing here may throw into React.
+   */
+
+  // The body as of the latest render. The inserts below run after an await
+  // (store the file, then insert), by which time this component's `note`
+  // prop can already be stale.
+  const bodyRef = useRef(note.body); bodyRef.current = note.body;
+
+  // Where the caret was the last time this note was edited, remembered with
+  // the body text it belonged to. Both gestures that insert a picture take
+  // focus away first — dragging a file in comes from another window, and
+  // opening the context menu blurs the textarea, which ends edit mode — so
+  // by the time a reference is ready there is no live editor to ask. The
+  // remembered position is only trusted while the body still matches, so an
+  // edit elsewhere can never send a picture to a stale offset.
+  const lastCaretRef = useRef(null);
+  const rememberCaret = (e) => {
+    const ta = e.target;
+    lastCaretRef.current = { start: ta.selectionStart, end: ta.selectionEnd, body: ta.value };
+  };
+
+  // Caret to insert at: the live editor if one is open, otherwise the
+  // remembered one when it still fits the current body.
+  const editorCaret = () => {
+    const ta = el.current && el.current.querySelector('textarea');
+    if (ta) return { ta, start: ta.selectionStart, end: ta.selectionEnd };
+    const last = lastCaretRef.current;
+    if (last && last.body === (bodyRef.current || '')) return { start: last.start, end: last.end };
+    return null;
+  };
+
+  // Put stored references into the body: at the caret when the editor is
+  // open, otherwise appended to the end on a line of their own. Several
+  // pictures (a multi-file drop) go in together, one per line, in drop order.
+  const insertImageRefs = (refs, caret) => {
+    if (!refs || !refs.length) return;
+    const md = refs.map(r => `![](${r})`).join('\n');
+    // execCommand keeps the textarea's native undo — and React's onChange —
+    // working, the same contract as the paste and list-editing edits.
+    if (caret && caret.ta && caret.ta.isConnected) {
+      caret.ta.focus();
+      caret.ta.setSelectionRange(caret.start, caret.end);
+      document.execCommand('insertText', false, md);
+      return;
+    }
+    // No live editor: this is an app-level edit, so it needs its own undo
+    // step. Without one, Ctrl+Z reaches past the picture to whatever was
+    // snapshotted before it — deleting unrelated work.
+    onSnapshot && onSnapshot();
+    const body = bodyRef.current || '';
+    if (caret) {
+      const at = Math.min(Math.max(caret.start, 0), body.length);
+      const to = Math.min(Math.max(caret.end, at), body.length);
+      const next = body.slice(0, at) + md + body.slice(to);
+      lastCaretRef.current = { start: at + md.length, end: at + md.length, body: next };
+      onChange({ body: next });
+      return;
+    }
+    onChange({ body: body ? body + (body.endsWith('\n') ? '' : '\n') + md : md });
+  };
+
+  // One file in, one sticky-image:// reference out (null on failure). Two
+  // routes, because which one works depends on the environment:
+  //   1. by path — webUtils.getPathForFile through the preload, read in the
+  //      main process. Inside flatpak a dropped file's path has been
+  //      rewritten by the document portal to /run/user/<uid>/doc/…, which
+  //      main may read even though the app has no filesystem permission;
+  //   2. by bytes — the File read in the renderer, like the paste fallback.
+  //      The only route when the drop carries no real path.
+  const storeImageFile = async (file, mime) => {
+    const api = window.stickyAPI;
+    if (!api) return null;   // web demo: no storage, nothing to insert
+    let filePath = '';
+    try { filePath = api.pathForFile ? api.pathForFile(file) : ''; } catch { filePath = ''; }
+    if (filePath && api.saveImageFile) {
+      try {
+        const res = await api.saveImageFile(filePath);
+        if (res && res.ok) return res.ref;
+        console.warn('[insert-image] path route failed:', res && res.error);
+      } catch (err) {
+        console.warn('[insert-image] path route failed:', err);
+      }
+    } else {
+      console.warn('[insert-image] no usable file path, reading the bytes in the renderer');
+    }
+    if (!api.saveImage) return null;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const res = await api.saveImage(bytes, mime);
+      if (res && res.ok) return res.ref;
+      console.warn('[insert-image] bytes route failed:', res && res.error);
+    } catch (err) {
+      console.warn('[insert-image] bytes route failed:', err);
+    }
+    return null;
+  };
+
+  // Files dropped on this note. Only pictures are taken (each one inserted,
+  // in drop order); folders, PDFs and friends are ignored without a sound.
+  const onDropFiles = (e) => {
+    const files = e.dataTransfer ? Array.from(e.dataTransfer.files || []) : [];
+    if (!files.length) return;   // not a file drop — leave it to the browser
+    // Every file drop is ours now, even one we go on to ignore: the default
+    // action is for the window to open the dropped file.
+    e.preventDefault();
+    e.stopPropagation();
+    const images = files
+      .map(f => ({ file: f, mime: imageMimeForFile(f.name, f.type) }))
+      .filter(x => x.mime);
+    if (!images.length) return;
+    const caret = editorCaret();
+    (async () => {
+      const refs = [];
+      for (const { file, mime } of images) {
+        const ref = await storeImageFile(file, mime);
+        if (ref) refs.push(ref);
+      }
+      insertImageRefs(refs, caret);
+    })().catch(err => console.warn('[insert-image]', err));
+  };
+
+  // Context-menu "Insert image…": main opens the picker, reads and stores
+  // the chosen file, and returns the reference — one round trip.
+  const insertImageFromPicker = () => {
+    const api = window.stickyAPI;
+    if (!api || !api.pickImage) return;
+    const caret = editorCaret();
+    Promise.resolve()
+      .then(() => api.pickImage())
+      .then(res => {
+        if (res && res.ok) insertImageRefs([res.ref], caret);
+        else if (res && !res.canceled) console.warn('[insert-image]', res.error);
+      })
+      .catch(err => console.warn('[insert-image]', err));
+  };
 
   // Mermaid diagrams (issue #31): mdToHtml renders ```mermaid fences as
   // <pre class="mermaid-src">; once the markdown HTML is in the DOM, swap
@@ -1544,6 +1686,18 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
     <div ref={el} data-note="1" data-note-id={note.id}
       onMouseDown={onFocus}
       onContextMenu={e=>{e.preventDefault(); e.stopPropagation(); setMenu({x:e.clientX, y:e.clientY});}}
+      // Dropping picture files anywhere on the note (header, body, footer)
+      // inserts them — see onDropFiles. Claiming the dragover is what makes
+      // the drop event fire at all, so only do it for drags that carry
+      // files: a text drag keeps its normal drop-into-the-editor behavior.
+      onDragOver={e=>{
+        const types = e.dataTransfer ? Array.from(e.dataTransfer.types || []) : [];
+        if (!types.includes('Files')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        try { e.dataTransfer.dropEffect = 'copy'; } catch {}
+      }}
+      onDrop={onDropFiles}
       style={{
         position:'absolute', left:note.x, top:note.y, width:note.w, height:note.h,
         background: bg, color: ink, zIndex: 10 + (note.z||0),
@@ -1735,8 +1889,11 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         }}>
         {editing ? (
           <textarea autoFocus value={note.body} dir="auto"
-            onChange={e=>onChange({body:e.target.value})}
-            onBlur={()=>setEditing(false)}
+            onChange={e=>{ rememberCaret(e); onChange({body:e.target.value}); }}
+            onSelect={rememberCaret}
+            onKeyUp={rememberCaret}
+            onClick={rememberCaret}
+            onBlur={e=>{ rememberCaret(e); setEditing(false); }}
             onPaste={e=>{
               const ta = e.target;
               // Pasted picture (screenshot / copied image): hand the bytes
@@ -1891,6 +2048,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
             {divider:true},
             {label:'Edit title', onClick:()=>setEditingTitle(true)},
             {label:'Edit body', onClick:()=>setEditing(true)},
+            {label:'Insert image…', onClick:()=>insertImageFromPicker()},
             {label: note.pinned?'Unpin':'Pin to top', onClick:()=>{ if (onTogglePin) onTogglePin(); else onChange({pinned:!note.pinned}); }},
             {divider:true},
             {label:'Link to note ▶', submenu: candidates.map(n => ({

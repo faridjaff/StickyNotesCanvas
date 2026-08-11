@@ -42,6 +42,24 @@ const IMAGE_EXT_BY_MIME = {
 // against this, so traversal names or non-image files are rejected everywhere.
 const IMAGE_FILE_RE = /^[0-9a-f]{16}\.(?:png|jpg|gif|webp)$/;
 
+// The reverse table, for the two ways a picture arrives as a FILE instead of
+// bytes + a mime type: dropped on a note, or chosen in the "Insert image…"
+// picker. There the extension is all the app has to go on. Derived from the
+// forward table so the supported set can never drift, plus '.jpeg' — the one
+// spelling the forward table can't produce, stored as image/jpeg like '.jpg'.
+// utils.jsx's imageMimeForFile is the renderer-side mirror of this.
+const IMAGE_MIME_BY_EXT = { jpeg: 'image/jpeg' };
+for (const [mime, ext] of Object.entries(IMAGE_EXT_BY_MIME)) IMAGE_MIME_BY_EXT[ext] = mime;
+
+function mimeForImageName(name) {
+  const m = /\.([A-Za-z0-9]+)$/.exec(String(name == null ? '' : name));
+  return (m && IMAGE_MIME_BY_EXT[m[1].toLowerCase()]) || null;
+}
+
+// A note body is not a place for a 100 MB photo, and the whole file is read
+// into memory to hash it — refuse the absurd ones instead of stalling.
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+
 function imageFileName(bytes, mime) {
   const ext = IMAGE_EXT_BY_MIME[String(mime || '').toLowerCase()];
   if (!ext) return null;
@@ -56,6 +74,26 @@ function saveImage(dir, bytes, mime) {
   const file = path.join(dir, name);
   if (!fs.existsSync(file)) fs.writeFileSync(file, bytes);
   return name;
+}
+
+// Read a picture off disk and store it exactly like a pasted one. Called
+// from the main process only — inside the flatpak sandbox the app has no
+// filesystem permission of its own, so `filePath` only ever reads when it is
+// a path the portals granted: a /run/user/<uid>/doc/… document-portal path
+// (what a drag-and-drop from the file manager is rewritten to) or a file the
+// user just chose in the file-chooser portal. A raw host path fails here,
+// which is exactly right. Throws with a readable message on anything the
+// caller should report instead of storing.
+function saveImageFromFile(dir, filePath) {
+  const mime = mimeForImageName(filePath);
+  if (!mime) throw new Error(`unsupported image type: ${path.extname(String(filePath || '')) || '(none)'}`);
+  const st = fs.statSync(filePath);
+  if (!st.isFile()) throw new Error('not a file');
+  if (st.size === 0) throw new Error('the file is empty');
+  if (st.size > MAX_IMAGE_BYTES) {
+    throw new Error(`image is too large (${Math.ceil(st.size / 1048576)} MB, limit ${MAX_IMAGE_BYTES / 1048576} MB)`);
+  }
+  return saveImage(dir, fs.readFileSync(filePath), mime);
 }
 
 // Notes are saved wholesale (there is no per-note delete at the storage
@@ -84,4 +122,7 @@ function sweepOrphanImages(dir, notesFilePath) {
   return removed;
 }
 
-module.exports = { load, save, imageFileName, saveImage, sweepOrphanImages, IMAGE_FILE_RE };
+module.exports = {
+  load, save, imageFileName, mimeForImageName, saveImage, saveImageFromFile,
+  sweepOrphanImages, IMAGE_FILE_RE, MAX_IMAGE_BYTES,
+};

@@ -69,7 +69,12 @@ can never touch real user notes. Unset, the app behaves exactly as before.
 - `images.e2e.mjs` — a PNG seeded into `<userData>/images/` under its
   content-hash name loads through the `sticky-image://` protocol (the
   rendered `<img>`'s naturalWidth goes above 0); a traversal-shaped
-  reference renders no `<img>` and stays literal text.
+  reference renders no `<img>` and stays literal text. Then drag-and-drop
+  (`Input.dispatchDragEvent` carrying a real file path in `data.files`,
+  which is how Chromium itself delivers a file-manager drop): dropping a
+  PNG on a note stores it under `<userData>/images/` and appends the
+  reference on its own line, dropping a `.txt` changes nothing, and
+  dropping onto an open editor inserts at the caret.
 - `editing.e2e.mjs` — editor keystrokes against the real textarea: Enter
   continues ordered lists ("1. x" → "2. "), Tab renumbers-to-1 while
   nesting ("2. y" → "   1. y"), Enter continues blockquotes ("> q" → "> "),
@@ -106,3 +111,19 @@ flatpak uninstall --user -y io.github.faridjaff.StickyNotesCanvas && rm -rf $V
 
 Note that a real `Ctrl+V` (`Input.dispatchKeyEvent` with `modifiers: 2`) is
 the only way to test a paste: synthetic paste events cannot carry files.
+
+What to check there for the two file routes into a note:
+
+- **drag-and-drop** — the app has no filesystem permission (`finish-args`
+  is ipc + wayland/x11 + dri, nothing else), so a dropped file is only
+  readable when the drop hands over a document-portal path
+  (`/run/user/<uid>/doc/…`) instead of a raw host path. Both the path
+  route (`webUtils.getPathForFile` → `images:save-file`, read in main) and
+  the renderer-bytes fallback fail on a raw host path — there is nothing
+  the app can do about that one, so this is the thing to confirm with a
+  real drag out of the file manager. `Input.dispatchDragEvent` with
+  `data.files` set to a path from `flatpak document-export --app=<id>
+  --allow-read <file>` exercises the portal case over CDP.
+- **"Insert image…"** — goes through the file-chooser portal, which needs a
+  human; the dialog itself cannot be driven headlessly. Everything after it
+  is `stickyAPI.saveImageFile(path)`, which can be called straight from CDP.

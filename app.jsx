@@ -30,7 +30,7 @@ function App() {
     let seen = null;
     try { seen = localStorage.getItem('stickies.lastSeenVersion'); } catch {}
     try { localStorage.setItem('stickies.lastSeenVersion', current); } catch {}
-    setWhatsNew(whatsNewInfo(current, seen));
+    setWhatsNew(whatsNewInfo(current, seen, window.stickyAPI.isFirstRun));
   }, []);
   if (!store) return <Loading/>;
   return (

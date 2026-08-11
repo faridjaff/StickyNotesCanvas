@@ -31,6 +31,18 @@ ipcMain.handle('shell:open-external', async (_e, url) => {
 
 const userDataDir = () => app.getPath('userData');
 const notesPath   = () => path.join(userDataDir(), 'notes.json');
+
+// Is this a genuine first install? The renderer uses it to tell a fresh
+// install (stay quiet) apart from an upgrade by someone whose previous
+// version never recorded a version number — everyone coming from 1.8.0 or
+// earlier is in that state, since the recording only began in 2.0.0.
+// Answered when the preload asks (after the legacy-userData migration, and
+// before the renderer can save anything), then cached so later windows agree.
+let firstRunFlag = null;
+ipcMain.on('app:first-run-sync', (e) => {
+  if (firstRunFlag === null) firstRunFlag = !fs.existsSync(notesPath());
+  e.returnValue = firstRunFlag;
+});
 const windowPath  = () => path.join(userDataDir(), 'window.json');
 const imagesDir   = () => path.join(userDataDir(), 'images');
 

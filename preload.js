@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.
   appVersion: ipcRenderer.sendSync('app:version-sync'),
+  // True only on a genuine first install (no notes.json yet). Lets the
+  // renderer skip the what's-new note for new users while still showing it
+  // to anyone upgrading from a version that never recorded one.
+  isFirstRun: ipcRenderer.sendSync('app:first-run-sync'),
   // Whether the running app is the snap build. snapd sets SNAP_NAME inside
   // the sandbox; nothing else does. Used to: skip the daily update check
   // (snap auto-refresh handles it), and surface a snap-friendly upgrade

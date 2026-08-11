@@ -667,15 +667,17 @@ function clipboardTextToNotes(text) {
     return null;
   } catch { return null; }
 }
-// One-time "what's new" note after an update (2.0 announcement): returns the
-// InfoDialog payload when this launch is the first on a NEW version, null
-// otherwise. First-ever run (no recorded version) announces nothing — a
-// fresh install IS the baseline. The web demo has no version identity
-// (no stickyAPI), so callers never invoke this there.
-function whatsNewInfo(current, lastSeen) {
-  if (!current || !lastSeen || current === lastSeen) return null;
+// One-time "what's new" note after an update: returns the InfoDialog payload
+// when this launch is the first on a NEW version, null otherwise.
+// A MISSING recorded version is an upgrade, not a fresh install — version
+// recording only began in 2.0.0, so everyone arriving from 1.8.0 or earlier
+// has none. Only isFirstRun (no notes.json before launch, reported by the
+// main process) marks a genuine new install, which stays quiet. The web demo
+// has no version identity (no stickyAPI), so callers never invoke it there.
+function whatsNewInfo(current, lastSeen, isFirstRun) {
+  if (!current || isFirstRun || current === lastSeen) return null;
   return {
-    title: `Updated to ${current}`,
+    title: 'What’s new',
     message: 'Your notes now speak full markdown',
     detail: [
       '• Numbered lists, quotes, tables, and code blocks render for real',

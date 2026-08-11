@@ -121,9 +121,11 @@ function defaultSeed() {
  * sticky-image:// protocol tests — anything the app expects to find on disk
  * at startup, alongside notes.json.
  */
-export async function launch({ seed = defaultSeed(), files = {} } = {}) {
+export async function launch({ seed = defaultSeed(), files = {}, whatsNew = false } = {}) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'sticky-e2e-'));
-  fs.writeFileSync(path.join(userData, 'notes.json'), JSON.stringify(seed, null, 2));
+  // seed:null leaves notes.json absent, which is how the app recognises a
+  // genuine first install (see main.js app:first-run-sync).
+  if (seed) fs.writeFileSync(path.join(userData, 'notes.json'), JSON.stringify(seed, null, 2));
   // Force a known window size so seeded positions are on-screen.
   fs.writeFileSync(path.join(userData, 'window.json'), JSON.stringify({ x: 0, y: 0, width: 1400, height: 900 }));
   for (const [rel, data] of Object.entries(files)) {
@@ -267,10 +269,22 @@ export async function launch({ seed = defaultSeed(), files = {} } = {}) {
     };
 
     // App fully hydrated: React mounted, every seeded note rendered.
-    await pollUntil(
-      () => evaljs(`document.querySelectorAll('[data-note-id] .md-body').length === ${seed.notes.length}`),
+    const hydrated = () => pollUntil(
+      () => evaljs(`document.querySelectorAll('[data-note-id] .md-body').length === ${(seed && seed.notes.length) || 0}`),
       { timeout: 20000, interval: 200, label: 'seeded notes to render' },
     );
+    await hydrated();
+
+    // A seeded profile looks like an upgrade, so the one-time what's-new
+    // note opens over the canvas and would swallow every click and gesture.
+    // Record the running version and reload so it stays shut — tests that
+    // are ABOUT the note pass whatsNew:true and handle it themselves.
+    if (!whatsNew) {
+      await evaljs(`localStorage.setItem('stickies.lastSeenVersion', window.stickyAPI.appVersion), 1`);
+      await cmd('Page.enable');
+      await cmd('Page.reload');
+      await hydrated();
+    }
 
     return { cmd, evaljs, click, dblclick, drag, type, press, noteBodyRect, screenshot, pollUntil, sleep, userData, close };
   } catch (err) {

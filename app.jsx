@@ -28,8 +28,8 @@ function App() {
     const current = window.stickyAPI?.appVersion;
     if (!current) return;
     let seen = null;
-    try { seen = localStorage.getItem('stickies.lastSeenVersion'); } catch {}
-    try { localStorage.setItem('stickies.lastSeenVersion', current); } catch {}
+    try { seen = localStorage.getItem('stickies.whatsNewSeen'); } catch {}
+    try { localStorage.setItem('stickies.whatsNewSeen', WHATS_NEW_ID); } catch {}
     setWhatsNew(whatsNewInfo(current, seen, window.stickyAPI.isFirstRun));
   }, []);
   if (!store) return <Loading/>;

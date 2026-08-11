@@ -94,30 +94,26 @@ test('text that merely mentions sticky-notes formats still errors only with the 
 
 /* ---------------- whatsNewInfo (2.0 announcement) ---------------- */
 
-const { whatsNewInfo } = sandbox.window;
+const { whatsNewInfo, WHATS_NEW_ID } = sandbox.window;
 
-test('version change shows the note once', () => {
-  const info = whatsNewInfo('2.0.1', '2.0.0', false);
-  assert.match(info.detail, /markdown|diagrams|Pinch/i);
-});
-
-test('upgrading from a version that never recorded one still shows it', () => {
-  // The 1.8.0 -> 2.x path: no stored version exists because recording began
-  // in 2.0.0, but notes.json did, so this is an upgrade, not a new install.
+test('an upgrader who has not seen the announcement gets it', () => {
+  // 1.8.0 recorded nothing; the 2.0.0 build recorded nothing either because
+  // its note never fired. Both look the same here: no seen id.
   const info = whatsNewInfo('2.0.1', null, false);
-  assert.ok(info, 'upgraders with no recorded version must see the note');
+  assert.ok(info, 'upgraders must see the note');
   assert.match(info.detail, /markdown/i);
-  assert.ok(whatsNewInfo('2.0.1', '', false), 'empty recorded version counts as an upgrade too');
 });
 
-test('same version shows nothing', () => {
-  assert.equal(whatsNewInfo('2.0.1', '2.0.1', false), null);
+test('once seen, it never returns — not on any later release', () => {
+  assert.equal(whatsNewInfo('2.0.1', WHATS_NEW_ID, false), null);
+  assert.equal(whatsNewInfo('2.1.0', WHATS_NEW_ID, false), null);
+  assert.equal(whatsNewInfo('3.4.5', WHATS_NEW_ID, false), null);
 });
 
-test('genuine first install shows nothing', () => {
+test('a genuine first install stays quiet', () => {
   assert.equal(whatsNewInfo('2.0.1', null, true), null);
 });
 
 test('missing current version shows nothing', () => {
-  assert.equal(whatsNewInfo(undefined, '1.8.0', false), null);
+  assert.equal(whatsNewInfo(undefined, null, false), null);
 });

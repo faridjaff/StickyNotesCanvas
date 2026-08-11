@@ -280,7 +280,7 @@ export async function launch({ seed = defaultSeed(), files = {}, whatsNew = fals
     // Record the running version and reload so it stays shut — tests that
     // are ABOUT the note pass whatsNew:true and handle it themselves.
     if (!whatsNew) {
-      await evaljs(`localStorage.setItem('stickies.lastSeenVersion', window.stickyAPI.appVersion), 1`);
+      await evaljs(`localStorage.setItem('stickies.whatsNewSeen', window.WHATS_NEW_ID), 1`);
       await cmd('Page.enable');
       await cmd('Page.reload');
       await hydrated();

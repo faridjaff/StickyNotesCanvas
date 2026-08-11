@@ -667,15 +667,22 @@ function clipboardTextToNotes(text) {
     return null;
   } catch { return null; }
 }
-// One-time "what's new" note after an update: returns the InfoDialog payload
-// when this launch is the first on a NEW version, null otherwise.
-// A MISSING recorded version is an upgrade, not a fresh install — version
-// recording only began in 2.0.0, so everyone arriving from 1.8.0 or earlier
-// has none. Only isFirstRun (no notes.json before launch, reported by the
-// main process) marks a genuine new install, which stays quiet. The web demo
-// has no version identity (no stickyAPI), so callers never invoke it there.
-function whatsNewInfo(current, lastSeen, isFirstRun) {
-  if (!current || isFirstRun || current === lastSeen) return null;
+// Identifies WHICH announcement this text is, not which version is running:
+// the note is tied to the 2.0 markdown overhaul, so it shows once and stays
+// gone through 2.0.2, 2.1.0 and everything after. A future announcement
+// means new text and a new id here — never a silent repeat of this one.
+const WHATS_NEW_ID = '2.0-markdown';
+
+// One-time "what's new" note: returns the InfoDialog payload the first time
+// a user who already had notes lands on 2.x, null otherwise.
+// An UNSEEN announcement id covers users upgrading from 1.8.0 (which
+// recorded nothing) and from the 2.0.0 build whose note never fired. Only
+// isFirstRun (no notes.json before launch, reported by the main process)
+// marks a genuine new install, which stays quiet — as does every later
+// release, since the id is already recorded by then. The web demo has no
+// version identity (no stickyAPI), so callers never invoke it there.
+function whatsNewInfo(current, seenId, isFirstRun) {
+  if (!current || isFirstRun || seenId === WHATS_NEW_ID) return null;
   return {
     title: 'What’s new',
     message: 'Your notes now speak full markdown',
@@ -734,4 +741,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, WHATS_NEW_ID, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults });

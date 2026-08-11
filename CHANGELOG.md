@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.0.0...v2.0.1) (2026-08-11)
+
+
+### Bug Fixes
+
+* show the what's new note to users upgrading from 1.8.0 ([20afb1b](https://github.com/faridjaff/StickyNotesCanvas/commit/20afb1b5810d02ababd51d8b794d3a1051ac6b07))
+* tie the what's new note to the 2.0 announcement, not every version bump ([90ef1eb](https://github.com/faridjaff/StickyNotesCanvas/commit/90ef1eb903fed83c12e1d828b781fed2ca81eef4))
+
 ## [2.0.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.8.0...v2.0.0) (2026-08-11)
 
 

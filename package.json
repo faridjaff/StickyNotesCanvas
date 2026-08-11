@@ -1,6 +1,6 @@
 {
   "name": "sticky-notes-canvas",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Spatial sticky notes canvas",
   "main": "main.js",
   "private": true,

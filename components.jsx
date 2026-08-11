@@ -616,7 +616,7 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
   links, addLink, removeLink, linksFor,
   updateNote, bringToFront, bringGroupToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
   jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote, onCopyNotes,
-  view, setView, drawerOpen, takeSnapshot, onPasteError}) {
+  view, setView, drawerOpen, takeSnapshot}) {
 
   // Tree-ordered folder list (with depth) for the per-note "Move to folder"
   // submenu, so nested folders appear indented under their parents there.
@@ -1072,7 +1072,6 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
         {/* Sticky notes */}
         {notes.map(n => (
           <StickyNote key={n.id} note={n} T={T} tweaks={tweaks} folder={folders[n.folder]}
-            onPasteError={onPasteError}
             refCb={(el)=>{ noteRefs.current[n.id] = el; }}
             selected={selectedIds.has(n.id)}
             selectedIds={selectedIds}
@@ -1220,7 +1219,7 @@ function kbdS(T) { return {fontFamily:'ui-monospace, monospace', fontSize:11, pa
 function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setSelectedIds, setNotes,
   bringGroupToFront,
   onFocus, onChange, onTogglePin, onDelete, onLinkClick, childFolders, onMoveToFolder, onMoveNotesToFolder, zoom=1,
-  allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote, onCopy, onPasteError}) {
+  allNotes=[], linksFor, onAddLink, onStartLink, onJumpToNote, onCopy}) {
   const zRef = useRef(zoom); zRef.current = zoom;
   const [editing, setEditing] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -1613,41 +1612,26 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
               // to the main process, which stores them content-hashed under
               // userData/images/ and returns a sticky-image:// reference
               // that mdToHtml renders as an <img>. Insertion goes through
-              // execCommand so native undo keeps working. When the paste
-              // can't proceed (web demo, unsupported format) the user gets
-              // a toast — unless the clipboard also carries text, which
-              // then pastes through the text chain below instead.
+              // execCommand so native undo keeps working. Electron-only:
+              // the web demo has no stickyAPI, so image pastes fall through
+              // to the default (inert for files) paste there.
               const items = e.clipboardData ? Array.from(e.clipboardData.items || []) : [];
               const imgItem = items.find(it => it.kind === 'file' && /^image\//.test(it.type));
-              if (imgItem) {
-                const problem = imagePasteError(imgItem.type,
-                  !!(window.stickyAPI && window.stickyAPI.saveImage));
-                if (!problem) {
-                  e.preventDefault();
-                  const file = imgItem.getAsFile();
-                  if (!file) return;
-                  const start = ta.selectionStart, end = ta.selectionEnd;
-                  file.arrayBuffer()
-                    .then(buf => window.stickyAPI.saveImage(new Uint8Array(buf), file.type))
-                    .then(res => {
-                      if (!res || !res.ok) {
-                        console.warn('[paste-image]', res && res.error);
-                        onPasteError && onPasteError("Couldn't save the pasted image" +
-                          (res && res.error ? ` — ${res.error}` : '.'));
-                        return;
-                      }
-                      ta.focus();
-                      ta.setSelectionRange(start, end);
-                      document.execCommand('insertText', false, `![](${res.ref})`);
-                    })
-                    .catch(err => console.warn('[paste-image]', err));
-                  return;
-                }
-                if (!(e.clipboardData.getData('text/plain') || '')) {
-                  e.preventDefault();
-                  onPasteError && onPasteError(problem);
-                  return;
-                }
+              if (imgItem && window.stickyAPI && window.stickyAPI.saveImage) {
+                e.preventDefault();
+                const file = imgItem.getAsFile();
+                if (!file) return;
+                const start = ta.selectionStart, end = ta.selectionEnd;
+                file.arrayBuffer()
+                  .then(buf => window.stickyAPI.saveImage(new Uint8Array(buf), file.type))
+                  .then(res => {
+                    if (!res || !res.ok) { console.warn('[paste-image]', res && res.error); return; }
+                    ta.focus();
+                    ta.setSelectionRange(start, end);
+                    document.execCommand('insertText', false, `![](${res.ref})`);
+                  })
+                  .catch(err => console.warn('[paste-image]', err));
+                return;
               }
               // Slack-style: pasting a URL over selected text wraps the
               // selection as [selection](url); pasting multi-line text on a

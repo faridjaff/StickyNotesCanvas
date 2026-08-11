@@ -548,7 +548,6 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
       />
 
       <Desktop T={T} tweaks={tweaks}
-        onPasteError={setPasteError}
         currentFolder={currentFolder}
         folders={folders}
         folderOrder={folderOrder}

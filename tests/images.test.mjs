@@ -201,34 +201,3 @@ test('sweepOrphanImages is a no-op without an images dir, and treats a missing n
     fs.rmSync(d, { recursive: true, force: true });
   }
 });
-
-/* ---------------- imagePasteError ---------------- */
-
-const { imagePasteError } = sandbox.window;
-
-test('supported format on desktop pastes silently (no error)', () => {
-  assert.equal(imagePasteError('image/png', true), null);
-  assert.equal(imagePasteError('image/webp', true), null);
-});
-
-test('web demo gets the needs-desktop message for any image', () => {
-  assert.match(imagePasteError('image/png', false), /desktop app/);
-});
-
-test('unsupported format on desktop names the format and the allowlist', () => {
-  const msg = imagePasteError('image/tiff', true);
-  assert.match(msg, /image\/tiff/);
-  assert.match(msg, /PNG, JPG, GIF, or WebP/);
-});
-
-test('no mime means no image involved — no error', () => {
-  assert.equal(imagePasteError('', true), null);
-});
-
-test('renderer allowlist mirrors storage.js IMAGE_EXT_BY_MIME', async () => {
-  const { default: storagePath } = { default: new URL('../storage.js', import.meta.url) };
-  const src = await import('node:fs').then(fs => fs.promises.readFile(storagePath, 'utf8'));
-  const mimes = [...src.matchAll(/'(image\/[a-z]+)':/g)].map(m => m[1]).sort();
-  for (const m of mimes) assert.equal(imagePasteError(m, true), null, m + ' should be accepted');
-  assert.equal(mimes.length, 4);
-});

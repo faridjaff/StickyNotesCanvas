@@ -353,22 +353,6 @@ function editLinkOnPaste(value, selStart, selEnd, pasted) {
   return { start: selStart, end: selEnd, text, caret: selStart + text.length };
 }
 
-// Renderer-side mirror of storage.js's IMAGE_EXT_BY_MIME allowlist. Kept in
-// sync by the images unit tests.
-const PASTE_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-
-// Why an image paste can't proceed, as a user-facing toast message — or null
-// when it can (supported format on desktop). The web demo has nowhere to
-// store files; unsupported formats (TIFF/BMP…) would need silent re-encoding
-// to even display, so both get told instead of silently dropped.
-function imagePasteError(mime, hasDesktopAPI) {
-  if (!mime) return null;
-  if (!hasDesktopAPI) return 'Image pasting needs the desktop app — the web demo cannot store files.';
-  if (!PASTE_IMAGE_MIMES.includes(String(mime).toLowerCase()))
-    return `That image format (${mime}) isn't supported — PNG, JPG, GIF, or WebP only.`;
-  return null;
-}
-
 // Open a note's web link outside the app: default browser under Electron
 // (http/https re-checked in the main process), new tab in the web demo.
 function openWebLink(url) {
@@ -710,4 +694,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, imagePasteError, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

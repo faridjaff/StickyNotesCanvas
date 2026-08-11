@@ -91,3 +91,26 @@ test('text that merely mentions sticky-notes formats still errors only with the 
   assert.equal(canvasPasteAction('the marker is <!-- sticky-notes/v1 --> fyi'), 'error');
   assert.equal(canvasPasteAction('the marker is sticky-notes/v1 fyi'), 'note');
 });
+
+/* ---------------- whatsNewInfo (2.0 announcement) ---------------- */
+
+const { whatsNewInfo } = sandbox.window;
+
+test('version change shows the note once', () => {
+  const info = whatsNewInfo('2.0.0', '1.8.0');
+  assert.match(info.title, /2\.0\.0/);
+  assert.match(info.detail, /markdown|diagrams|Pinch/i);
+});
+
+test('same version shows nothing', () => {
+  assert.equal(whatsNewInfo('2.0.0', '2.0.0'), null);
+});
+
+test('fresh install (no recorded version) shows nothing', () => {
+  assert.equal(whatsNewInfo('2.0.0', null), null);
+  assert.equal(whatsNewInfo('2.0.0', ''), null);
+});
+
+test('missing current version shows nothing', () => {
+  assert.equal(whatsNewInfo(undefined, '1.8.0'), null);
+});

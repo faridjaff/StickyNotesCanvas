@@ -21,6 +21,17 @@ function App() {
     const off = window.stickyAPI.onMenuImportHelp(() => setImportHelpOpen(true));
     return () => off && off();
   }, []);
+  // One-time "what's new" after an update — see whatsNewInfo. The recorded
+  // version updates unconditionally so the note shows exactly once.
+  const [whatsNew, setWhatsNew] = useState(null);
+  useEffect(() => {
+    const current = window.stickyAPI?.appVersion;
+    if (!current) return;
+    let seen = null;
+    try { seen = localStorage.getItem('stickies.lastSeenVersion'); } catch {}
+    try { localStorage.setItem('stickies.lastSeenVersion', current); } catch {}
+    setWhatsNew(whatsNewInfo(current, seen));
+  }, []);
   if (!store) return <Loading/>;
   return (
     <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
@@ -31,6 +42,7 @@ function App() {
           takeSnapshot={takeSnapshot} undo={undo} redo={redo} />
       </div>
       <InfoDialog info={update.info} onClose={update.closeInfo} />
+      <InfoDialog info={whatsNew} onClose={() => setWhatsNew(null)} />
       <ImportFromImageDialog open={importHelpOpen} onClose={() => setImportHelpOpen(false)} />
       {confirmRestore && (
         <ConfirmDialog T={themeTokens(store.tweaks?.theme)}

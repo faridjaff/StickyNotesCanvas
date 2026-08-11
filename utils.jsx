@@ -667,6 +667,30 @@ function clipboardTextToNotes(text) {
     return null;
   } catch { return null; }
 }
+// One-time "what's new" note after an update (2.0 announcement): returns the
+// InfoDialog payload when this launch is the first on a NEW version, null
+// otherwise. First-ever run (no recorded version) announces nothing — a
+// fresh install IS the baseline. The web demo has no version identity
+// (no stickyAPI), so callers never invoke this there.
+function whatsNewInfo(current, lastSeen) {
+  if (!current || !lastSeen || current === lastSeen) return null;
+  return {
+    title: `Updated to ${current}`,
+    message: 'Your notes now speak full markdown',
+    detail: [
+      '• Numbered lists, quotes, tables, and code blocks render for real',
+      '• Mermaid diagrams: a ```mermaid code fence becomes a flowchart',
+      '• Paste screenshots and pictures straight into a note',
+      '• Select and copy note text without entering edit mode',
+      '• Paste any text onto the canvas to make a note of it',
+      '• Download any note as a markdown file',
+      '• Pinch-zoom and smoother touch dragging everywhere',
+      '',
+      'Your existing notes are untouched — some may simply render richer than before.',
+    ].join('\n'),
+  };
+}
+
 // Canvas-level paste dispatch (issue #29): what should Ctrl+V over the desk
 // do with this clipboard text?
 //   'payload' — parseable sticky-notes payload with notes: import them
@@ -708,4 +732,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults });

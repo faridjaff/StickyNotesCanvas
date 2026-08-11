@@ -469,6 +469,82 @@ function downloadNoteAsMarkdown(note) {
   }
 }
 
+/* ---------- Import a markdown FILE as a note (desk menu "Import markdown file…") ----------
+ * The exact inverse of the Download above, so the round trip is lossless:
+ * the file's contents become the note BODY verbatim and its FILENAME becomes
+ * the TITLE — which is the only place noteToMarkdown/noteDownloadFilename
+ * put the title. Everything here is pure and unit-tested; the picker itself
+ * lives in the main process (see notes:import-markdown), which is also where
+ * the file is read and where the byte-level guards are enforced.
+ */
+
+// Filename extensions the importer strips off a title. Mirrors the picker's
+// filter list in main.js — every name the dialog can return ends in one of
+// these, and an unknown suffix is left alone rather than guessed at.
+const MARKDOWN_FILE_EXT_RE = /\.(?:md|markdown|mdown|mkd|txt)$/i;
+
+// Note title for an imported file: its name with the markdown extension
+// dropped. Any directory part goes too, unicode is kept as-is (a title is
+// not a filesystem path), whitespace runs collapse the way
+// noteDownloadFilename collapses them on the way out, and a name that
+// leaves nothing behind (".md", "", a path ending in a slash) falls back to
+// "note" — the same last resort the download filename uses.
+function markdownFileTitle(name) {
+  const base = String(name == null ? '' : name).split(/[\\/]/).pop();
+  return base.replace(MARKDOWN_FILE_EXT_RE, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+    .trim() || 'note';
+}
+
+// Note body for an imported file's contents: a leading UTF-8 BOM dropped
+// (Notepad and friends add one), CRLF / lone CR normalised to \n so the
+// body matches what the editor produces, and trailing whitespace trimmed —
+// exactly what noteToMarkdown does on the way out, which is what makes the
+// download → import round trip byte-exact.
+function markdownFileBody(content) {
+  return String(content == null ? '' : content)
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\s+$/, '');
+}
+
+// One picked file → { name, title, body } to make a note from, or
+// { name, error } explaining why not (the app surfaces those in the paste
+// error toast). `file` is { name, content } as read by the main process —
+// or already { name, error } when main couldn't read it, which passes
+// straight through.
+function markdownFileToNote(file) {
+  const f = file || {};
+  const name = (typeof f.name === 'string' && f.name.trim()) ? f.name : 'file';
+  if (f.error) return { name, error: String(f.error) };
+  if (typeof f.content !== 'string') return { name, error: 'nothing to read' };
+  if (f.content.indexOf('\u0000') !== -1) return { name, error: 'not a text file' };
+  return { name, title: markdownFileTitle(name), body: markdownFileBody(f.content) };
+}
+
+// Browser fallback for the import (the web demo has no main process to open
+// a native dialog): the same hidden <input type="file"> trick as
+// pickJSONFile below, resolving to the shape the Electron IPC returns.
+function pickMarkdownFiles() {
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = true;
+    input.accept = '.md,.markdown,.mdown,.mkd,.txt,text/markdown,text/plain';
+    input.onchange = () => {
+      const files = Array.from(input.files || []);
+      if (!files.length) { resolve([]); return; }
+      Promise.all(files.map(f => f.text().then(
+        content => ({ name: f.name, content }),
+        err => ({ name: f.name, error: (err && err.message) || 'unreadable' }),
+      ))).then(resolve, () => resolve([]));
+    };
+    input.click();
+  });
+}
+
 function pickJSONFile() {
   return new Promise(resolve => {
     const input = document.createElement('input');
@@ -878,4 +954,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, isDarkSurface, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });
+Object.assign(window, { FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, isDarkSurface, markdownFileBody, markdownFileTitle, markdownFileToNote, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, pickMarkdownFiles, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });

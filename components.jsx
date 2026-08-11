@@ -671,7 +671,7 @@ function KeyHint({T, keys, label}) {
 function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNotes, noteRefs, linkLines,
   links, addLink, removeLink, linksFor,
   updateNote, bringToFront, bringGroupToFront, focusNote, onDeleteNote, selectedIds, setSelectedIds, setNotes,
-  jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote, onCopyNotes,
+  jumpToNote, moveNoteToFolder, moveNotesToFolder, onCreateNote, onImportMarkdown, onCopyNotes,
   view, setView, drawerOpen, takeSnapshot}) {
 
   // Tree-ordered folder list (with depth) for the per-note "Move to folder"
@@ -1316,6 +1316,12 @@ function Desktop({T, tweaks, currentFolder, folders, folderOrder, notes, allNote
           <ContextMenu T={T} x={sx} y={sy} onClose={()=>setDeskMenu(null)}
             items={[
               {label:'New note here', onClick:()=>{ onCreateNote(world.x, world.y); setDeskMenu(null); }},
+              // Importing a .md file makes a NOTE, so it belongs next to
+              // "New note here" rather than in one note's own menu. The
+              // picked files land like a paste does (near the viewport,
+              // cascaded), not at this click — the dialog takes as long as
+              // the user takes, and a multi-file pick needs the cascade.
+              {label:'Import markdown file…', onClick:()=>{ onImportMarkdown && onImportMarkdown(); setDeskMenu(null); }},
               {label:'Reset view', onClick:()=>{ resetView(); setDeskMenu(null); }},
             ]}/>
         );

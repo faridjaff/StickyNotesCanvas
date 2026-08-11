@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
   load: loadNotes, save: saveNotes,
-  saveImage, saveImageFromFile, sweepOrphanImages, IMAGE_FILE_RE,
+  saveImage, saveImageFromFile, sweepOrphanImages, readMarkdownFile, IMAGE_FILE_RE,
 } = require('./storage.js');
 
 // E2E test hook: when STICKY_USER_DATA is set, store all app data (notes.json,
@@ -348,6 +348,27 @@ ipcMain.handle('notes:export-markdown', async (_e, payload) => {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+});
+
+// Desk context-menu "Import markdown file…": the exact inverse of the
+// Download above — each chosen .md file becomes a note, its contents the
+// body and its filename the title. One round trip, like images:pick: main
+// opens the picker (the file-chooser portal under flatpak), reads every
+// chosen file and hands back their names and contents; the renderer turns
+// them into notes. Reading happens here for the same reason as the image
+// file routes — the sandboxed app has no filesystem permission of its own,
+// the portal grants the chosen file to this process. Per-file failures ride
+// along in the same array as { name, error }, so one unreadable file can't
+// sink the rest of the selection.
+ipcMain.handle('notes:import-markdown', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Import markdown',
+    buttonLabel: 'Import',
+    filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'] }],
+    properties: ['openFile', 'multiSelections'],
+  });
+  if (canceled || !filePaths || !filePaths.length) return { ok: false, canceled: true };
+  return { ok: true, files: filePaths.map(readMarkdownFile) };
 });
 
 ipcMain.handle('notes:import', async () => {

@@ -62,6 +62,15 @@ can never touch real user notes. Unset, the app behaves exactly as before.
 - `markdown-render.e2e.mjs` — rendered `.md-body` DOM: heading shift
   (###→h5, ####→h6), `ol > li` + nested ol, blockquote, table, `pre > code`
   fences, `javascript:` links stay inert text, bare `www.` URLs linkify.
+  Then the markdown *import* (issue #44): the desk context menu offers
+  "Import markdown file…" next to "New note here", and handing the canvas's
+  `onImportMarkdown` the payload the main process returns for two chosen
+  files makes one note per file — filename as the title, contents as the
+  body (BOM dropped, CRLF normalised), cascaded like a paste, rendering as
+  markdown, and removed as a whole by a single Ctrl+Z. The picker itself is
+  a native dialog no test can drive, so it is never clicked here — the file
+  reading behind it is `readMarkdownFile` in `tests/storage.test.mjs`, and
+  the dialog needs the manual flatpak pass below.
 - `mermaid.e2e.mjs` — a valid mermaid fence becomes an SVG (async, polled);
   a garbage fence fails soft (code block stays, no svg, app still alive),
   including across an edit-mode round trip.
@@ -122,7 +131,7 @@ flatpak uninstall --user -y io.github.faridjaff.StickyNotesCanvas && rm -rf $V
 Note that a real `Ctrl+V` (`Input.dispatchKeyEvent` with `modifiers: 2`) is
 the only way to test a paste: synthetic paste events cannot carry files.
 
-What to check there for the two file routes into a note:
+What to check there for the file routes into a note:
 
 - **drag-and-drop** — the app has no filesystem permission (`finish-args`
   is ipc + wayland/x11 + dri, nothing else), so a dropped file is only
@@ -137,3 +146,11 @@ What to check there for the two file routes into a note:
 - **"Insert image…"** — goes through the file-chooser portal, which needs a
   human; the dialog itself cannot be driven headlessly. Everything after it
   is `stickyAPI.saveImageFile(path)`, which can be called straight from CDP.
+- **"Import markdown file…"** (desk context menu) — the same file-chooser
+  portal, so the same human. Pick one `.md` and confirm a note appears with
+  the filename as its title and the file's text as its body; pick several at
+  once and confirm one note per file. The file is read in main
+  (`notes:import-markdown` → `readMarkdownFile`) precisely because the
+  portal grants it to that process; a renderer-side read would fail here the
+  way image pasting used to. Worth one round trip in both directions: a
+  note's "Download", then importing the file it wrote back.

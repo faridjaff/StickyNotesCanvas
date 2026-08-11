@@ -8,6 +8,11 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   // Context-menu "Download": save a single note as a markdown file via the
   // OS save dialog. payload = { filename, content }.
   exportMarkdown: (payload) => ipcRenderer.invoke('notes:export-markdown', payload),
+  // Desk context-menu "Import markdown file…": main opens the picker (the
+  // file-chooser portal under flatpak), reads every chosen file and resolves
+  // { ok, files: [{ name, content } | { name, error }] } — or
+  // { ok:false, canceled:true }. The renderer makes one note per file.
+  importMarkdown: () => ipcRenderer.invoke('notes:import-markdown'),
   // Store a pasted picture (raw bytes + mime type) under userData/images/.
   // Resolves { ok, ref } where ref is the sticky-image:// URL that note
   // markdown embeds as ![](ref) and mdToHtml renders as an <img>.

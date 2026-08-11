@@ -434,6 +434,89 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     setSelectedIds(new Set(newIds));
   };
 
+  /* ----- import markdown files as notes (issue #44) -----
+   * The inverse of a note's context-menu "Download": one note per file, the
+   * file's contents its body and the filename its title — which is exactly
+   * where Download put the title, so the round trip is lossless.
+   */
+
+  // Everything after the picker: files whose contents have already been read
+  // ({ name, content }, or { name, error } for one main couldn't read) turn
+  // into notes. Split out from the picker half because a native file dialog
+  // is the one thing no test can drive, so this is where the coverage lives.
+  const importMarkdownFiles = (files) => {
+    const results = (Array.isArray(files) ? files : []).map(markdownFileToNote);
+    const usable = results.filter(r => !r.error);
+    const failed = results.filter(r => r.error);
+    if (usable.length) {
+      // Placement, colour and size follow the canvas paste exactly: anchored
+      // near the visible viewport (converted to world coords through the
+      // current pan/zoom) so the notes land where the user is looking, and
+      // cascaded so a multi-file import doesn't stack into one pile.
+      const v = store.view || { x: 0, y: 0, z: 1 };
+      const baseX = (80 + Math.random() * 100 - v.x) / v.z;
+      const baseY = (80 + Math.random() * 80  - v.y) / v.z;
+      const STEP = 24 / v.z;
+      const targetFolder = isAll
+        ? (Object.keys(folders).find(k => k!=='root') || 'root')
+        : currentFolder;
+      const palette = NOTE_COLORS.filter(c => c.id !== 'white');
+      const fresh = usable.map((r, idx) => {
+        zRef.current += 1;
+        return {
+          id: uid('n'),
+          folder: targetFolder,
+          title: r.title,
+          body:  r.body,
+          color: palette[Math.floor(Math.random() * palette.length)].id,
+          w: 260, h: 180,
+          x: baseX + STEP * idx,
+          y: baseY + STEP * idx,
+          pinned: false, z: zRef.current,
+        };
+      });
+      // One snapshot for the whole import, however many files were picked:
+      // a single Ctrl+Z takes all of them back out again.
+      takeSnapshot();
+      setNotes(ns => [...ns, ...fresh]);
+      setSelectedIds(new Set(fresh.map(n => n.id)));
+    }
+    // Unreadable / oversized / non-text files surface in the same toast the
+    // paste failures use instead of vanishing. The rest of the batch is
+    // still imported above.
+    if (failed.length) {
+      setPasteError(`Couldn't import ${failed.length} file${failed.length > 1 ? 's' : ''}:\n`
+        + failed.map(r => `${r.name} — ${r.error}`).join('\n'));
+    }
+  };
+
+  // Desk context-menu "Import markdown file…". Called with no argument — as
+  // the menu does — it opens the picker: the native dialog under Electron,
+  // which main also reads the chosen files through (inside the flatpak
+  // sandbox the app has no filesystem permission of its own; the
+  // file-chooser portal grants the file to the main process), or a hidden
+  // file input in the web demo. A caller that already holds the files
+  // passes them in and skips the dialog — that is the e2e suite's way in.
+  const importMarkdown = async (files) => {
+    if (Array.isArray(files)) { importMarkdownFiles(files); return; }
+    const api = window.stickyAPI;
+    try {
+      if (api && api.importMarkdown) {
+        const res = await api.importMarkdown();
+        if (!res || res.canceled) return;
+        if (!res.ok) {
+          setPasteError(`Couldn't import — ${res.error || 'the file could not be read'}.`);
+          return;
+        }
+        importMarkdownFiles(res.files);
+      } else {
+        importMarkdownFiles(await pickMarkdownFiles());
+      }
+    } catch (err) {
+      setPasteError(`Couldn't import — ${(err && err.message) || 'the file could not be read'}.`);
+    }
+  };
+
   /* ----- link operations ----- */
   const addLink = (fromId, toId) => {
     if (!fromId || !toId || fromId===toId) return;
@@ -618,6 +701,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
         moveNoteToFolder={moveNoteToFolder}
         moveNotesToFolder={moveNotesToFolder}
         onCreateNote={createNote}
+        onImportMarkdown={importMarkdown}
         onCopyNotes={copySelected}
         view={store.view}
         setView={(v) => setKey('view', v)}

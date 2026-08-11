@@ -96,6 +96,47 @@ function saveImageFromFile(dir, filePath) {
   return saveImage(dir, fs.readFileSync(filePath), mime);
 }
 
+/* ---------- Importing a markdown FILE as a note ----------
+ * The inverse of the context menu's "Download": a .md file the user picked
+ * becomes a note, its contents the body and its filename the title.
+ */
+
+// No size limit on an imported file: a huge one may well make a sluggish
+// note, but nobody has measured where that starts, and the same question is
+// open for pasted text (issue #39). Both paths stay uncapped until it is
+// measured, rather than guessing two different numbers.
+
+// Read one file for the markdown importer: { name, content } on success,
+// { name, error } with a message worth showing the user on anything else.
+// Never throws — one unreadable file must not sink the rest of a multi-file
+// selection. Called from the main process only, for the same reason as
+// saveImageFromFile above: inside the flatpak sandbox the app has no
+// filesystem permission of its own, and this is the process the file-chooser
+// portal granted the chosen file to.
+function readMarkdownFile(filePath) {
+  const name = path.basename(String(filePath || '')) || 'file';
+  try {
+    const st = fs.statSync(filePath);
+    if (!st.isFile()) return { name, error: 'not a file' };
+    const bytes = fs.readFileSync(filePath);
+    // A NUL byte means this was never text (a PDF or an image renamed .md,
+    // a UTF-16 file); fatal decoding rejects everything else that isn't
+    // UTF-8. Both would otherwise land in a note as mojibake.
+    if (bytes.includes(0)) return { name, error: 'not a text file' };
+    try {
+      // ignoreBOM keeps a leading BOM in the string instead of eating it
+      // here: normalising the text (BOM, CRLF, trailing whitespace) is
+      // utils.jsx's markdownFileBody, the one place both this route and the
+      // web demo's browser-side read go through.
+      return { name, content: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) };
+    } catch {
+      return { name, error: 'not UTF-8 text' };
+    }
+  } catch (err) {
+    return { name, error: err.message };
+  }
+}
+
 // Notes are saved wholesale (there is no per-note delete at the storage
 // level), so deleting a note — or undoing a paste — can orphan its image
 // files. Called once at app startup, when no paste can be in flight: every
@@ -124,5 +165,5 @@ function sweepOrphanImages(dir, notesFilePath) {
 
 module.exports = {
   load, save, imageFileName, mimeForImageName, saveImage, saveImageFromFile,
-  sweepOrphanImages, IMAGE_FILE_RE, MAX_IMAGE_BYTES,
+  sweepOrphanImages, readMarkdownFile, IMAGE_FILE_RE, MAX_IMAGE_BYTES,
 };

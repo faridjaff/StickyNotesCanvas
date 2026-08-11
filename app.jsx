@@ -304,6 +304,30 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     let text = '';
     try { text = await navigator.clipboard.readText(); } catch { return; }
     if (!text) return;  // empty clipboard — silent (no intent)
+    // Plain text with no sticky-notes marker anywhere is not a failed
+    // import — it's text. Make a note out of it where the user is looking
+    // (#29). A marker that IS present but unusable still falls through to
+    // the error toasts below.
+    if (canvasPasteAction(text) === 'note') {
+      const v = store.view || { x: 0, y: 0, z: 1 };
+      const palette = NOTE_COLORS.filter(c => c.id !== 'white');
+      zRef.current += 1;
+      const note = {
+        id: uid('n'),
+        folder: isAll ? (Object.keys(folders).find(k => k!=='root') || 'root') : currentFolder,
+        title: '',  // body only — mirrors the download format, so the round trip is exact
+        body: text.replace(/\r\n?/g, '\n'),
+        color: palette[Math.floor(Math.random() * palette.length)].id,
+        w: 260, h: 180,
+        x: (80 + Math.random() * 100 - v.x) / v.z,
+        y: (80 + Math.random() * 80  - v.y) / v.z,
+        pinned: false, z: zRef.current,
+      };
+      takeSnapshot();
+      setNotes(ns => [...ns, note]);
+      setSelectedIds(new Set([note.id]));
+      return;
+    }
     const payload = clipboardTextToNotes(text);
     if (!payload) {
       // Clipboard had text, but no sticky-notes marker / invalid JSON.

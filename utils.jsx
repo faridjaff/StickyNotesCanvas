@@ -667,6 +667,20 @@ function clipboardTextToNotes(text) {
     return null;
   } catch { return null; }
 }
+// Canvas-level paste dispatch (issue #29): what should Ctrl+V over the desk
+// do with this clipboard text?
+//   'payload' — parseable sticky-notes payload with notes: import them
+//   'error'   — the marker is there but the payload is unusable (broken or
+//               empty JSON): tell the user, a garbage note would be worse
+//   'note'    — any other non-empty text: create a note from it
+//   'ignore'  — empty clipboard, no intent
+function canvasPasteAction(text) {
+  if (!text) return 'ignore';
+  const payload = clipboardTextToNotes(text);
+  if (payload) return payload.notes.length ? 'payload' : 'error';
+  return text.includes(STICKY_CLIPBOARD_MARKER) ? 'error' : 'note';
+}
+
 function cmpSemver(a, b) {
   const pa = a.split('.').map(n => parseInt(n, 10) || 0);
   const pb = b.split('.').map(n => parseInt(n, 10) || 0);
@@ -694,4 +708,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });
+Object.assign(window, { FOLDER_HUES, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hasTextSelection, hashRot, mdToHtml, noteDownloadFilename, noteToMarkdown, notesToClipboardText, openWebLink, pickJSONFile, sanitizeFolderParents, themeTokens, uid, withA, withDefaults });

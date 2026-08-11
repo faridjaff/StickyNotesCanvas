@@ -60,3 +60,34 @@ test('partial selection of an existing link returns null', () => {
 test('multi-line selection returns null', () => {
   assert.equal(editLinkOnPaste('a\nb', 0, 3, 'https://x.y'), null);
 });
+
+/* ---------------- canvasPasteAction (#29) ---------------- */
+
+const { canvasPasteAction, notesToClipboardText, STICKY_CLIPBOARD_MARKER } = sandbox.window;
+
+test('plain text on the canvas becomes a note', () => {
+  assert.equal(canvasPasteAction('shopping: eggs, milk'), 'note');
+  assert.equal(canvasPasteAction('# md heading\n- bullet'), 'note');
+});
+
+test('a real copied-notes payload still imports', () => {
+  const payload = notesToClipboardText([{ id: 'n1', title: 'T', body: 'B', color: 'blue', w: 1, h: 1 }], []);
+  assert.equal(canvasPasteAction(payload), 'payload');
+});
+
+test('marker present but JSON broken means error, not a garbage note', () => {
+  assert.equal(canvasPasteAction('hi\n' + STICKY_CLIPBOARD_MARKER + '\n{oops'), 'error');
+});
+
+test('marker with an empty notes set means error', () => {
+  assert.equal(canvasPasteAction(STICKY_CLIPBOARD_MARKER + '\n{"notes":[],"links":[]}'), 'error');
+});
+
+test('empty clipboard is ignored silently', () => {
+  assert.equal(canvasPasteAction(''), 'ignore');
+});
+
+test('text that merely mentions sticky-notes formats still errors only with the real marker', () => {
+  assert.equal(canvasPasteAction('the marker is <!-- sticky-notes/v1 --> fyi'), 'error');
+  assert.equal(canvasPasteAction('the marker is sticky-notes/v1 fyi'), 'note');
+});

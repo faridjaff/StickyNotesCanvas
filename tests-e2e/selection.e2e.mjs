@@ -10,7 +10,7 @@
 // selection-write counts.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { launch, NOTE } from './harness.mjs';
+import { launch, NOTE, PLAIN_BODY, RICH_BODY } from './harness.mjs';
 
 let app;
 before(async () => { app = await launch(); });
@@ -273,4 +273,95 @@ test('hovering an inert menu row does not make it look clickable', async () => {
   await closeMenu();
   const hide = await centreOf('button', '›');
   await app.click(hide.x, hide.y);   // restore the closed drawer
+});
+
+/* ---------- issue #35: the editor opens AT the double-clicked word ----------
+ * The caret used to land at offset 0 whatever was clicked. These drive the
+ * real gesture: locate a word's glyphs with a DOM Range (getBoundingClientRect
+ * gives transformed viewport coordinates, which is exactly what
+ * Input.dispatchMouseEvent wants), double-click the middle of it, and read
+ * the real textarea's selectionStart back.
+ */
+
+// Viewport centre of the `nth` occurrence of `word` in a note's preview,
+// verified to actually be inside that note's scrolled body box.
+const wordPoint = (noteId, word, nth = 0) => app.evaljs(`(() => {
+  const body = document.querySelector('[data-note-id="${noteId}"] .md-body');
+  if (!body) return { error: 'no preview' };
+  const box = body.parentElement.getBoundingClientRect();
+  const walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  let n, seen = 0;
+  while ((n = walk.nextNode())) {
+    for (let i = n.data.indexOf(${JSON.stringify(word)}); i !== -1;
+         i = n.data.indexOf(${JSON.stringify(word)}, i + 1)) {
+      if (seen++ !== ${nth}) continue;
+      const r = document.createRange();
+      r.setStart(n, i); r.setEnd(n, i + ${word.length});
+      const b = r.getBoundingClientRect();
+      const p = { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+      if (p.x < box.left || p.x > box.right || p.y < box.top || p.y > box.bottom) {
+        return { error: 'word is scrolled out of the note body' };
+      }
+      return p;
+    }
+  }
+  return { error: 'word not rendered' };
+})()`);
+
+// Double-click that word and report where the editor put the caret.
+const caretAfterDblclick = async (noteId, word, nth = 0) => {
+  await clearSelection();
+  const pt = await wordPoint(noteId, word, nth);
+  assert.equal(pt.error, undefined, `"${word}" #${nth}: ${pt.error}`);
+  await app.dblclick(pt.x, pt.y);
+  const state = await app.pollUntil(() => app.evaljs(`(() => {
+    const ta = document.querySelector('[data-note-id="${noteId}"] textarea');
+    return ta ? { start: ta.selectionStart, end: ta.selectionEnd, value: ta.value } : null;
+  })()`), { timeout: 3000, interval: 50, label: `textarea for ${noteId}` });
+  await app.press('Escape');
+  await app.pollUntil(
+    () => app.evaljs(`!document.querySelector('[data-note-id="${noteId}"] textarea')`),
+    { timeout: 3000, interval: 50, label: 'editor to close' },
+  );
+  return state;
+};
+
+test('double-clicking a word in the middle of a note opens the editor on that word', async () => {
+  const at = PLAIN_BODY.indexOf('kilo');
+  assert.ok(at > 0, 'the fixture must have "kilo" past the start');
+  const s = await caretAfterDblclick(NOTE.plain, 'kilo');
+  assert.equal(s.value, PLAIN_BODY, 'the editor holds the raw body');
+  assert.equal(s.start, at, 'the caret is at the clicked word, not at 0');
+  assert.equal(s.end, at, 'and it is a caret, not a selection');
+});
+
+test('double-clicking the first word still opens at a sensible offset', async () => {
+  const s = await caretAfterDblclick(NOTE.plain, 'alpha');
+  assert.equal(s.start, 0, 'the first word is offset 0 — same as the old behaviour');
+});
+
+test('a word on a later line maps past the earlier lines', async () => {
+  const s = await caretAfterDblclick(NOTE.plain, 'foxtrot');
+  assert.equal(s.start, PLAIN_BODY.indexOf('foxtrot'));
+});
+
+test('markdown markers do not shift the caret: a word inside a blockquote', async () => {
+  // "> quoted" — the caret must land on the word, not on the quote marker.
+  const s = await caretAfterDblclick(NOTE.rich, 'quoted');
+  assert.equal(s.value, RICH_BODY, 'the editor holds the raw markdown');
+  assert.equal(s.start, RICH_BODY.indexOf('quoted'));
+  assert.equal(RICH_BODY.slice(s.start, s.start + 6), 'quoted');
+});
+
+test('the empty note still opens its editor at 0 without a crash', async () => {
+  await clearSelection();
+  const r = await app.noteBodyRect(NOTE.empty);
+  await app.dblclick((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+  const s = await app.pollUntil(() => app.evaljs(`(() => {
+    const ta = document.querySelector('[data-note-id="${NOTE.empty}"] textarea');
+    return ta ? { start: ta.selectionStart, value: ta.value } : null;
+  })()`), { timeout: 3000, interval: 50, label: 'textarea on the empty note' });
+  assert.equal(s.value, '');
+  assert.equal(s.start, 0);
+  await app.press('Escape');
 });

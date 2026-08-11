@@ -1645,6 +1645,59 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
     return () => { cancelled = true; };
   }, [editing, note.body]);
 
+  /* ---------- Double-click opens the editor AT the clicked word (#35) ----------
+   * By the time onDoubleClick runs the browser has already selected the word
+   * under the pointer, and the selection's range start is an exact (text
+   * node, offset) pair — the one position that survives the desk's zoom and
+   * rotation transforms (caretRangeFromPoint does not: it collapses to the
+   * start of the line). flattenPreviewText turns the rendered body into
+   * plain text plus that offset, sourceCaretForPreviewClick maps it back
+   * through the markdown to an offset in the raw body, and the layout effect
+   * below puts the caret there once the textarea has mounted. Every step
+   * fails soft: the worst case is the caret at 0, which is where it always
+   * used to land.
+   */
+  const pendingCaretRef = useRef(null);
+  const pendingScrollRef = useRef(0);
+  const taRef = useRef(null);
+  const caretFromPreviewClick = () => {
+    try {
+      const root = mdBodyRef.current;
+      const sel = typeof window.getSelection === 'function' ? window.getSelection() : null;
+      if (!root || !sel || !sel.rangeCount) return null;
+      const r = sel.getRangeAt(0);          // always in document order
+      if (!root.contains(r.startContainer)) return null;
+      const flat = flattenPreviewText(root, r.startContainer, r.startOffset);
+      if (flat.offset < 0) return null;
+      return sourceCaretForPreviewClick(bodyRef.current || '', flat.text, flat.offset);
+    } catch (err) {
+      console.warn('[caret]', err);         // never block entering edit mode
+      return null;
+    }
+  };
+  useLayoutEffect(() => {
+    const at = pendingCaretRef.current;
+    const scroll = pendingScrollRef.current;
+    pendingCaretRef.current = null;
+    pendingScrollRef.current = 0;
+    const ta = taRef.current;
+    if (!editing || at == null || !ta) return;
+    const pos = Math.max(0, Math.min(at, ta.value.length));
+    ta.setSelectionRange(pos, pos);
+    // Open looking where the reader was looking: setSelectionRange moves the
+    // caret but never scrolls, so a caret deep in a long note sat off-screen
+    // until the first keystroke yanked the view down to it.
+    if (scroll) ta.scrollTop = scroll;
+    const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 18;
+    const caretTop = ta.value.slice(0, pos).split('\n').length * lineHeight;
+    if (caretTop < ta.scrollTop || caretTop > ta.scrollTop + ta.clientHeight) {
+      ta.scrollTop = Math.max(0, caretTop - ta.clientHeight / 2);
+    }
+    // Keep the remembered caret (what image insertion aims at once the
+    // editor has been blurred away) in step with what the user sees.
+    lastCaretRef.current = { start: pos, end: pos, body: ta.value };
+  }, [editing]);
+
   // When the user clicks outside the note while editing, exit edit mode so
   // the cursor visibly goes away and further typing doesn't keep landing in
   // the note. The native blur event doesn't fire here because the desk's
@@ -1917,7 +1970,17 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
         </button>
       </div>
 
-      <div onDoubleClick={()=>setEditing(true)} ref={bodyBoxRef}
+      <div onDoubleClick={()=>{
+          // Read the word the browser just selected BEFORE the preview is
+          // unmounted by the state change below (#35).
+          if (!editing) {
+            pendingCaretRef.current = caretFromPreviewClick();
+            // The preview and the editor lay text out on the same lines
+            // (#26), so the preview's scroll position is the editor's too.
+            pendingScrollRef.current = bodyBoxRef.current ? bodyBoxRef.current.scrollTop : 0;
+          }
+          setEditing(true);
+        }} ref={bodyBoxRef}
         onPointerDown={e=>{
           // Mouse/pen drag-selection in preview: while the drag lasts, the
           // sel-lock class makes everything outside this body unselectable,
@@ -1986,7 +2049,7 @@ function StickyNote({note, T, tweaks, folder, refCb, selected, selectedIds, setS
           userSelect:'text', cursor:'text',
         }}>
         {editing ? (
-          <textarea autoFocus value={note.body} dir="auto"
+          <textarea autoFocus ref={taRef} value={note.body} dir="auto"
             onChange={e=>{ snapshotOnce(); rememberCaret(e); onChange({body:e.target.value}); }}
             onSelect={rememberCaret}
             onKeyUp={rememberCaret}

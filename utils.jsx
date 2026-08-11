@@ -243,6 +243,372 @@ if (typeof mermaid !== 'undefined') {
   mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
 }
 
+/* ---------- DOUBLE-CLICK IN THE PREVIEW -> CARET IN THE SOURCE (issue #35)
+ *
+ * Double-clicking a rendered note body opens the editor; the caret used to
+ * land at offset 0 no matter which word was clicked. These helpers move it
+ * to that word's position in the RAW markdown.
+ *
+ * Screen coordinates are NOT usable for this: under the desk's zoom/rotate
+ * transforms document.caretRangeFromPoint collapses to the start of the
+ * line (measured — every x across a line returns offset 0). What IS
+ * reliable is the selection the browser has already made by the time the
+ * dblclick event fires: it holds the clicked word, and its range start
+ * gives an exact (text node, offset) pair regardless of transforms.
+ *
+ * The mapping is therefore textual, in three pure steps:
+ *   1. flattenPreviewText  — the rendered DOM as plain text, one line per
+ *      visual line, plus the offset of the clicked position in it;
+ *   2. renderedWordAt      — which word that offset sits in, WHICH
+ *      occurrence of it (markdown never reorders text, so the Nth
+ *      occurrence in the preview is the Nth in the source), and the line
+ *      it lives on;
+ *   3. markdownVisibleText — the source projected down to just the text
+ *      markdown-it would show, with a source offset kept for every
+ *      character, so a hit in the projection maps straight back.
+ *
+ * The projection is an approximation of markdown-it, so every step is
+ * guarded by a count check and degrades instead of guessing (see
+ * sourceCaretForPreviewClick for the ladder).
+ */
+
+// A "word" for this purpose: letters, digits and underscore in ANY script —
+// \p{L} covers Arabic, Hebrew and CJK, so RTL notes behave like ASCII ones.
+const CARET_WORD_CHAR = /[\p{L}\p{N}_]/u;
+const isCaretWordChar = (ch) => typeof ch === 'string' && CARET_WORD_CHAR.test(ch);
+
+// Every offset in `text` where `word` stands as a whole word. Rendered text
+// and source projection are both counted with this one function, so "the
+// Nth occurrence" means exactly the same thing on both sides.
+function caretWordHits(text, word) {
+  const out = [];
+  if (!word) return out;
+  for (let i = text.indexOf(word); i !== -1; i = text.indexOf(word, i + 1)) {
+    if (!isCaretWordChar(text[i - 1]) && !isCaretWordChar(text[i + word.length])) out.push(i);
+  }
+  return out;
+}
+
+// Tags that open a visual line of their own in the rendered preview.
+// Containers that only frame other blocks (ul/ol/blockquote/table/thead/
+// tbody/tr) are deliberately absent — their children open the lines.
+const PREVIEW_LINE_TAG = /^(?:P|H[1-6]|LI|PRE|TD|TH|HR|DT|DD|DIV)$/;
+
+// The rendered preview as plain text (one line per visual line), plus where
+// the DOM position (node, nodeOffset) lands in it — or offset:-1 when that
+// position isn't in the walked text (e.g. inside a mermaid diagram).
+// Mirrors the browser: <br> is a line break, block elements start a line,
+// an empty paragraph (a blank source line, issue #26) still costs a line.
+function flattenPreviewText(root, node, nodeOffset) {
+  let text = '';
+  let started = false;        // has any line been opened yet
+  let offset = -1;
+  const walk = (parent) => {
+    for (let child = parent.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 3) {
+        const data = child.data || '';
+        if (child === node) {
+          offset = text.length + Math.max(0, Math.min(Number(nodeOffset) || 0, data.length));
+        }
+        if (data) { text += data; started = true; }
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      const tag = (child.tagName || '').toUpperCase();
+      // A rendered mermaid diagram carries none of the note's own text: its
+      // labels come from the SVG, not from anything the user can point at
+      // in the source. Skip the subtree entirely.
+      if (tag === 'SVG' || (child.classList && child.classList.contains('mermaid-diagram'))) continue;
+      if (tag === 'BR') {
+        // A <br> that closes its block is layout (that's how a blank source
+        // line renders: <p><br></p>), not a line of its own.
+        if (child.nextSibling) { text += '\n'; started = true; }
+        continue;
+      }
+      const opensLine = PREVIEW_LINE_TAG.test(tag);
+      if (opensLine && started) text += '\n';
+      if (child === node) offset = text.length;
+      const before = text.length;
+      walk(child);
+      // <pre><code> content ends with the fence's own newline; that is the
+      // block terminator, not an empty line the user could have clicked.
+      if (tag === 'PRE' && text.length > before && text.endsWith('\n')) text = text.slice(0, -1);
+      if (opensLine) started = true;
+    }
+  };
+  if (root) walk(root);
+  return { text, offset };
+}
+
+// Which word of the rendered text `offset` sits in, and everything needed to
+// find it again in the source: its occurrence index over the whole preview,
+// its occurrence index within its own line, and both totals (the totals are
+// what let the source side notice it disagrees and refuse to guess).
+// word:'' means the click didn't land on a word (whitespace, a blank line).
+function renderedWordAt(text, offset) {
+  const src = typeof text === 'string' ? text : '';
+  let at = Math.max(0, Math.min(Number(offset) || 0, src.length));
+  const lineStart = src.lastIndexOf('\n', at - 1) + 1;
+  let lineEnd = src.indexOf('\n', at);
+  if (lineEnd === -1) lineEnd = src.length;
+  let lineIndex = 0;
+  for (let i = src.indexOf('\n'); i !== -1 && i < lineStart; i = src.indexOf('\n', i + 1)) lineIndex++;
+  let lineCount = 1;
+  for (let i = src.indexOf('\n'); i !== -1; i = src.indexOf('\n', i + 1)) lineCount++;
+  const line = src.slice(lineStart, lineEnd);
+  const hit = { word: '', occurrence: -1, total: 0,
+    line, lineIndex, lineCount, lineOccurrence: -1, lineTotal: 0 };
+  // A double-click anchors on the first character of the word it selected;
+  // a caret resting just past a word counts as that word too.
+  if (!isCaretWordChar(src[at]) && isCaretWordChar(src[at - 1])) at--;
+  if (!isCaretWordChar(src[at])) return hit;
+  let s = at, e = at;
+  while (s > lineStart && isCaretWordChar(src[s - 1])) s--;
+  while (e < lineEnd && isCaretWordChar(src[e])) e++;
+  hit.word = src.slice(s, e);
+  const all = caretWordHits(src, hit.word);
+  hit.total = all.length;
+  hit.occurrence = all.indexOf(s);
+  const inLine = caretWordHits(line, hit.word);
+  hit.lineTotal = inLine.length;
+  hit.lineOccurrence = inLine.indexOf(s - lineStart);
+  return hit;
+}
+
+const CARET_ESCAPABLE = /[\\`*_{}[\]()#+\-.!>~|]/;
+const CARET_HR_LINE = /^[ \t]{0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$/;
+const CARET_TABLE_ROW = /^[ \t]{0,3}\|.*\|[ \t]*$/;
+
+// An inline [text](url) / ![alt](url) starting at `line[i] === '['`, with
+// both the label and the target found by balanced scanning (the seed's
+// "[evil](javascript:alert(1))" needs the nested parens). null = literal '['.
+function caretInlineLink(line, i) {
+  let depth = 0, j = i;
+  for (; j < line.length; j++) {
+    const ch = line[j];
+    if (ch === '\\') { j++; continue; }
+    if (ch === '[') depth++;
+    else if (ch === ']') { depth--; if (!depth) break; }
+  }
+  if (j >= line.length || line[j + 1] !== '(') return null;
+  let k = j + 2, open = 1;
+  for (; k < line.length; k++) {
+    const ch = line[k];
+    if (ch === '\\') { k++; continue; }
+    if (ch === '(') open++;
+    else if (ch === ')') { open--; if (!open) break; }
+  }
+  if (k >= line.length) return null;
+  const url = line.slice(j + 2, k).trim().split(/\s+/)[0] || '';
+  // Same test as md.validateLink: a rejected target is rendered as literal
+  // text, brackets and URL included, so the projection must keep it too.
+  const renderable = /^https?:\/\//i.test(url) || IMAGE_REF_RE.test(url);
+  return renderable ? { textStart: i + 1, textEnd: j, end: k + 1 } : null;
+}
+
+// One line of inline markdown -> the characters markdown-it will actually
+// show, with the source offset of each one. Markers (emphasis, code ticks,
+// link syntax) drop out; their content stays where it is in the source.
+function caretInlineVisible(line, base) {
+  let out = '';
+  const offs = [];
+  const emit = (i) => { out += line[i]; offs.push(base + i); };
+  let i = 0;
+  while (i < line.length) {
+    const c = line[i];
+    if (c === '\\' && CARET_ESCAPABLE.test(line[i + 1] || '')) { i++; emit(i); i++; continue; }
+    if (c === '`') {
+      const ticks = /^`+/.exec(line.slice(i))[0];
+      const close = line.indexOf(ticks, i + ticks.length);
+      if (close !== -1) {
+        for (let k = i + ticks.length; k < close; k++) emit(k);
+        i = close + ticks.length;
+        continue;
+      }
+      emit(i); i++; continue;                       // unmatched tick: literal
+    }
+    if (c === '[' || (c === '!' && line[i + 1] === '[')) {
+      const link = caretInlineLink(line, c === '[' ? i : i + 1);
+      if (link) {
+        if (c === '!') { i = link.end; continue; }  // an image shows no text
+        const inner = caretInlineVisible(line.slice(link.textStart, link.textEnd), base + link.textStart);
+        out += inner.text;
+        for (const o of inner.offs) offs.push(o);
+        i = link.end; continue;
+      }
+    }
+    if (c === '*') { i += /^\*+/.exec(line.slice(i))[0].length; continue; }
+    if (c === '~' && line[i + 1] === '~') { i += /^~+/.exec(line.slice(i))[0].length; continue; }
+    if (c === '_') {
+      const run = /^_+/.exec(line.slice(i))[0];
+      // markdown-it leaves intraword underscores alone (snake_case stays).
+      if (isCaretWordChar(line[i - 1]) && isCaretWordChar(line[i + run.length])) {
+        for (let k = 0; k < run.length; k++) emit(i + k);
+      }
+      i += run.length; continue;
+    }
+    emit(i); i++;
+  }
+  return { text: out, offs };
+}
+
+// The cells of a table row, as {s,e} index pairs into the line with the
+// surrounding whitespace and the outer pipes already stripped.
+function caretTableCells(line) {
+  const cells = [];
+  let s = 0;
+  for (let k = 0; k <= line.length; k++) {
+    if (k < line.length && !(line[k] === '|' && line[k - 1] !== '\\')) continue;
+    let a = s, b = k;
+    while (a < b && /[ \t]/.test(line[a])) a++;
+    while (b > a && /[ \t]/.test(line[b - 1])) b--;
+    cells.push({ s: a, e: b });
+    s = k + 1;
+  }
+  if (cells.length && cells[0].s === cells[0].e) cells.shift();
+  if (cells.length && cells[cells.length - 1].s === cells[cells.length - 1].e) cells.pop();
+  return cells;
+}
+
+// The source projected down to the text the preview shows: `text` holds one
+// visible line per rendered line, `map[i]` is the source offset of text[i]
+// (-1 for the joining newlines), and `lines[]` records each visible line's
+// span plus the source offset its line starts at (the fallback caret).
+// Deliberately approximate — it exists to be CHECKED against the rendered
+// text, not trusted blindly.
+function markdownVisibleText(src) {
+  const source = typeof src === 'string' ? src : '';
+  let text = '';
+  const map = [];
+  const lines = [];
+  const unit = (chunk, offs, srcStart) => {
+    if (lines.length) { text += '\n'; map.push(-1); }
+    const start = text.length;
+    text += chunk;
+    for (const o of offs) map.push(o);
+    lines.push({ start, end: text.length, src: srcStart });
+  };
+  let at = 0;
+  let fence = null;
+  for (const line of source.split('\n')) {
+    const base = at;
+    at += line.length + 1;
+    const fm = line.match(FENCE_LINE);
+    if (fence) {
+      // Inside a fence every line is code, shown verbatim; the closing
+      // marker line itself shows nothing.
+      if (fm && fm[1][0] === fence.marker && fm[1].length >= fence.len && fm[2].trim() === '') { fence = null; continue; }
+      const offs = [];
+      for (let k = 0; k < line.length; k++) offs.push(base + k);
+      unit(line, offs, base);
+      continue;
+    }
+    if (fm) { fence = { marker: fm[1][0], len: fm[1].length }; continue; }
+    // A blank source line is an empty rendered line (issue #26), and a rule
+    // is a line with no text — both keep the line numbering honest.
+    if (line.trim() === '' || CARET_HR_LINE.test(line)) { unit('', [], base); continue; }
+    if (CARET_TABLE_ROW.test(line)) {
+      // The |---|---| delimiter row is syntax; every other row shows one
+      // rendered line per cell (that is how the DOM walk sees td/th too).
+      if (line.includes('-') && /^[ \t]*\|[ \t:|-]*\|[ \t]*$/.test(line)) continue;
+      for (const cell of caretTableCells(line)) {
+        const v = caretInlineVisible(line.slice(cell.s, cell.e), base + cell.s);
+        unit(v.text, v.offs, base);
+      }
+      continue;
+    }
+    // Block markers show nothing: quote arrows, list bullets/numbers
+    // (rendered from CSS counters), heading hashes.
+    let rest = line, off = 0;
+    const mq = /^[ \t]*(?:>[ \t]?)+/.exec(rest);
+    if (mq) { off += mq[0].length; rest = rest.slice(mq[0].length); }
+    const ml = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+/.exec(rest);
+    if (ml) { off += ml[0].length; rest = rest.slice(ml[0].length); }
+    const mh = /^[ \t]{0,3}#{1,6}(?:[ \t]+|$)/.exec(rest);
+    if (mh) {
+      off += mh[0].length;
+      rest = rest.slice(mh[0].length).replace(/[ \t]+#+[ \t]*$/, '');
+    }
+    const v = caretInlineVisible(rest, base + off);
+    unit(v.text, v.offs, base);
+  }
+  return { text, map, lines };
+}
+
+// Which projected line the clicked rendered line is. By text first (an exact
+// match is proof, and ties break on the line number); by line number alone
+// only when both sides agree on how many lines there are, which means the
+// structure lines up even though this one line's text doesn't.
+function caretResolveLine(proj, lineText, lineIndex, lineCount) {
+  const want = (lineText || '').trim();
+  const hits = [];
+  for (let i = 0; i < proj.lines.length; i++) {
+    const l = proj.lines[i];
+    if (proj.text.slice(l.start, l.end).trim() === want) hits.push(i);
+  }
+  const idx = typeof lineIndex === 'number' ? lineIndex : -1;
+  if (hits.length === 1) return hits[0];
+  if (hits.length > 1) {
+    if (idx < 0) return -1;
+    return hits.reduce((best, i) => (Math.abs(i - idx) < Math.abs(best - idx) ? i : best), hits[0]);
+  }
+  if (idx >= 0 && idx < proj.lines.length && lineCount === proj.lines.length) return idx;
+  return -1;
+}
+
+// Rungs 1 and 2 of the ladder, against an already-built projection.
+function caretPlaceWord(proj, word, occurrence, opts) {
+  if (!word || !(occurrence >= 0)) return null;
+  // 1. Occurrence index over the whole note. Markdown never reorders text,
+  //    so the Nth occurrence in the preview is the Nth in the source — as
+  //    long as both sides count the same number of them.
+  const all = caretWordHits(proj.text, word);
+  if (occurrence < all.length && (typeof opts.total !== 'number' || opts.total === all.length)) {
+    return proj.map[all[occurrence]];
+  }
+  // 2. The same question scoped to the clicked line. This survives a
+  //    projection that is wrong SOMEWHERE ELSE in the note (a mermaid
+  //    diagram, an exotic construct) as long as this line is right.
+  const li = caretResolveLine(proj, opts.line, opts.lineIndex, opts.lineCount);
+  if (li < 0 || !(opts.lineOccurrence >= 0)) return null;
+  const l = proj.lines[li];
+  const inLine = caretWordHits(proj.text.slice(l.start, l.end), word);
+  if (opts.lineOccurrence < inLine.length
+      && (typeof opts.lineTotal !== 'number' || opts.lineTotal === inLine.length)) {
+    return proj.map[l.start + inLine[opts.lineOccurrence]];
+  }
+  return null;
+}
+
+// PURE. Where the `occurrence`-th whole-word `word` sits in `source`,
+// counting only the text the preview actually shows — null when it can't be
+// placed. `opts` carries the preview's own tallies, which act as guards:
+// { total, line, lineIndex, lineCount, lineOccurrence, lineTotal }. Omit
+// them and this is simply "the Nth occurrence of the word in the source".
+function sourceOffsetForWord(source, word, occurrence, opts = {}) {
+  const at = caretPlaceWord(markdownVisibleText(source), word, occurrence, opts || {});
+  return typeof at === 'number' && at >= 0 ? at : null;
+}
+
+// PURE. The source offset a double-click at `renderedOffset` in the
+// preview's flattened `renderedText` should put the caret at. The ladder,
+// each rung checked before it is taken:
+//   1. the word, by occurrence index over the whole note;
+//   2. the word, by occurrence index within the clicked line;
+//   3. the start of the clicked line's source line;
+//   4. 0 — exactly what happened before this feature existed.
+function sourceCaretForPreviewClick(source, renderedText, renderedOffset) {
+  const src = typeof source === 'string' ? source : '';
+  if (!src) return 0;
+  const proj = markdownVisibleText(src);
+  const hit = renderedWordAt(renderedText, renderedOffset);
+  const at = caretPlaceWord(proj, hit.word, hit.occurrence, hit);
+  if (typeof at === 'number' && at >= 0) return Math.min(at, src.length);
+  const li = caretResolveLine(proj, hit.line, hit.lineIndex, hit.lineCount);
+  if (li >= 0) return Math.min(proj.lines[li].src, src.length);
+  return 0;
+}
+
 // One indent level for markdown bullet lists, in the note-body editor.
 const LIST_INDENT = '  ';
 const ORDERED_LIST_INDENT = '   ';
@@ -954,4 +1320,4 @@ function downloadUrlForPlatform(version) {
 const MOBILE_BANNER_DISMISSED_KEY = 'stickies.mobileBannerDismissed';
 const MOBILE_BANNER_MAX_WIDTH = 640;
 
-Object.assign(window, { FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, isDarkSurface, markdownFileBody, markdownFileTitle, markdownFileToNote, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, pickMarkdownFiles, sanitizeFolderParents, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });
+Object.assign(window, { FOLDER_HUES, HOVER_ALPHA, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, NOTE_COLORS, SEED, STICKY_CLIPBOARD_MARKER, TWEAK_DEFAULTS, WHATS_NEW_ID, ZOOM_MAX, ZOOM_MIN, canMoveFolder, canvasPasteAction, clipboardTextToNotes, cmpSemver, downloadJSON, downloadNoteAsMarkdown, downloadUrlForPlatform, editLinkOnPaste, editListOnEnter, editListOnTab, editQuoteOnPaste, flattenFolderTree, flattenPreviewText, folderPath, folderSubtreeIds, hashRot, hasTextSelection, hexChannels, hoverBg, hoverInk, imageMimeForFile, isDarkSurface, markdownFileBody, markdownFileTitle, markdownFileToNote, markdownVisibleText, mdToHtml, mixHex, normHex, noteDownloadFilename, notesToClipboardText, noteToMarkdown, openWebLink, pickJSONFile, pickMarkdownFiles, renderedWordAt, sanitizeFolderParents, sourceCaretForPreviewClick, sourceOffsetForWord, themeTokens, uid, whatsNewInfo, withA, withDefaults, zoomActionForKey, zoomViewAt });

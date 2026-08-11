@@ -3,6 +3,15 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { load: loadNotes, save: saveNotes } = require('./storage.js');
 
+// E2E test hook: when STICKY_USER_DATA is set, store all app data (notes.json,
+// window.json, the Chromium profile) under that directory instead of the real
+// user profile. Must run before app ready — everything below resolves paths
+// through app.getPath('userData'). Tests point this at a throwaway tmp dir so
+// they can seed known notes and never touch real user data.
+if (process.env.STICKY_USER_DATA) {
+  app.setPath('userData', process.env.STICKY_USER_DATA);
+}
+
 // Synchronous IPC for the preload script to fetch the running app's version
 // at load time, so the renderer can compare it to whatever the GitHub
 // Releases API reports as the latest tag.

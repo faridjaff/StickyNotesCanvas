@@ -1,0 +1,6 @@
+#!/bin/sh
+# Gate every push on the E2E suite (launches the real app, needs a display).
+# Bypass: git push --no-verify
+cd "$(git rev-parse --show-toplevel)" || exit 1
+echo "pre-push: npm run test:e2e"
+npm run test:e2e || { echo "pre-push: E2E tests failed — push blocked"; exit 1; }

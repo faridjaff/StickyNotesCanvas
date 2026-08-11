@@ -74,3 +74,35 @@ can never touch real user notes. Unset, the app behaves exactly as before.
   continues ordered lists ("1. x" → "2. "), Tab renumbers-to-1 while
   nesting ("2. y" → "   1. y"), Enter continues blockquotes ("> q" → "> "),
   and the typed body renders correctly after leaving edit mode.
+
+## Verifying inside the flatpak (pre-release)
+
+Some failures only exist in the flatpak sandbox and cannot be reproduced by
+this suite, which drives plain Electron. Image pasting was one: the `File`
+object a paste event carries is backed by a Chromium temp file the renderer
+cannot read there, so `arrayBuffer()` rejected with `NotFoundError` and the
+paste silently did nothing, while every test here passed. (Fixed by reading
+the image in the main process — `images:save-clipboard`.)
+
+Recipe, run before publishing a release that touches clipboard, files, or
+dialogs:
+
+```sh
+# 1. build from the working tree: copy the Flathub manifest, replace the
+#    git source with `- type: dir` / `path: /home/farid/open_source/sticky-notes`
+flatpak-builder --user --force-clean --install --disable-rofiles-fuse \
+  build-dir io.github.faridjaff.StickyNotesCanvas.yaml
+
+# 2. run it on a throwaway profile, with CDP reachable
+#    (--share=network is needed for the debug port; --disable-gpu avoids a
+#    GPU init crash under that flag; STICKY_USER_DATA keeps real notes safe)
+V=~/.var/app/io.github.faridjaff.StickyNotesCanvas/config/verify
+flatpak run --user --share=network --env=STICKY_USER_DATA=$V \
+  io.github.faridjaff.StickyNotesCanvas --remote-debugging-port=9229 --disable-gpu
+
+# 3. drive it over CDP exactly like harness.mjs does, then
+flatpak uninstall --user -y io.github.faridjaff.StickyNotesCanvas && rm -rf $V
+```
+
+Note that a real `Ctrl+V` (`Input.dispatchKeyEvent` with `modifiers: 2`) is
+the only way to test a paste: synthetic paste events cannot carry files.

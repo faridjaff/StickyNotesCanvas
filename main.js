@@ -96,6 +96,13 @@ function saveBounds(b) {
   }
 }
 
+// Linux/Windows draw the application menu as a bar inside the window; macOS
+// puts it in the system menu bar, where it belongs and where hiding it isn't
+// possible (or wanted). Everything the app itself offers is reachable from
+// the page — top chrome, status bar, note context menus, Preferences — so
+// that in-window bar is dead chrome (#42).
+const HIDE_MENU_BAR = process.platform !== 'darwin';
+
 function createWindow() {
   const bounds = loadBounds();
   mainWindow = new BrowserWindow({
@@ -108,12 +115,29 @@ function createWindow() {
     backgroundColor: '#14181d',
     title: 'Sticky Notes',
     icon: path.join(__dirname, 'build', 'icon.png'),
+    // Hidden, not removed: Alt still summons it for the one-off items that
+    // live nowhere else (Reload, Toggle DevTools, Full screen).
+    autoHideMenuBar: HIDE_MENU_BAR,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  // autoHideMenuBar alone leaves the bar showing on some window managers
+  // until the first Alt; this starts it hidden everywhere.
+  if (HIDE_MENU_BAR) mainWindow.setMenuBarVisibility(false);
+
+  // The user can pin the bar open from Preferences; the renderer tells us
+  // whenever that preference loads or changes. macOS has no in-window bar.
+  ipcMain.removeHandler('window:menu-bar');
+  ipcMain.handle('window:menu-bar', (_e, show) => {
+    if (!HIDE_MENU_BAR || !mainWindow) return { ok: false };
+    mainWindow.setAutoHideMenuBar(!show);
+    mainWindow.setMenuBarVisibility(!!show);
+    return { ok: true };
   });
 
   mainWindow.loadFile('index.html');
@@ -135,6 +159,12 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+// The application menu stays registered even though its bar is hidden in the
+// window (see HIDE_MENU_BAR). Setting it is what gives the app its keyboard
+// layer: the Ctrl/Cmd+, accelerator, and — the part that is easy to miss —
+// the Edit roles, which are how Electron wires Ctrl+C/V/X/A and undo/redo to
+// the focused text field. Menu.setApplicationMenu(null) would take the bar
+// away and those shortcuts with it.
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const prefsItem = {

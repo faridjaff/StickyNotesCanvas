@@ -16,11 +16,12 @@ function App() {
   // the LLM's reply is pasted here (Ctrl+V) and hits the existing paste
   // handler. No network calls from the app itself — bring your own LLM.
   const [importHelpOpen, setImportHelpOpen] = useState(false);
+  const openImportHelp = useCallback(() => setImportHelpOpen(true), []);
   useEffect(() => {
     if (!window.stickyAPI?.onMenuImportHelp) return;
-    const off = window.stickyAPI.onMenuImportHelp(() => setImportHelpOpen(true));
+    const off = window.stickyAPI.onMenuImportHelp(openImportHelp);
     return () => off && off();
-  }, []);
+  }, [openImportHelp]);
   // One-time "what's new" after an update — see whatsNewInfo. The recorded
   // version updates unconditionally so the note shows exactly once.
   const [whatsNew, setWhatsNew] = useState(null);
@@ -39,7 +40,8 @@ function App() {
       <div style={{flex:'1 1 auto', minHeight:0, position:'relative'}}>
         {update.available && <UpdateBanner info={update.available} onDismiss={update.dismiss}/>}
         <AppInner store={store} setKey={setKey} exportNow={exportNow} importNow={requestRestore}
-          takeSnapshot={takeSnapshot} undo={undo} redo={redo} />
+          takeSnapshot={takeSnapshot} undo={undo} redo={redo}
+          onImportFromImage={openImportHelp} />
       </div>
       <InfoDialog info={update.info} onClose={update.closeInfo} />
       <InfoDialog info={whatsNew} onClose={() => setWhatsNew(null)} />
@@ -57,7 +59,7 @@ function App() {
   );
 }
 
-function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, redo }) {
+function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, redo, onImportFromImage }) {
   const tweaks   = store.tweaks;
   const folders  = store.folders;
   const notes    = store.notes;
@@ -89,8 +91,10 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
 
   // Ctrl/Cmd+, toggles the preferences (tweaks) panel. In Electron, the
   // accelerator is registered on the File → Preferences… menu item, which
-  // handles the keystroke before it reaches the window. This window-level
-  // handler is a fallback for the browser case (no stickyAPI).
+  // handles the keystroke before it reaches the window — the menu bar is
+  // hidden (#42) but the menu itself is still set, so the accelerator lives.
+  // This window-level handler is a fallback for the browser case (no
+  // stickyAPI).
   useEffect(() => {
     if (window.stickyAPI) return;
     const onKey = (e) => {
@@ -103,7 +107,8 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Menu → Preferences… (from the native menu bar) toggles the panel.
+  // Menu → Preferences… (the app menu's accelerator, or Alt to summon the
+  // hidden bar and click it) toggles the panel.
   useEffect(() => {
     if (!window.stickyAPI?.onMenuPreferences) return;
     const off = window.stickyAPI.onMenuPreferences(() => setPrefsOpen(o => !o));
@@ -121,6 +126,12 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
     window.addEventListener('wheel', guard, { passive: false });
     return () => window.removeEventListener('wheel', guard);
   }, []);
+
+  // Keep the window's menu bar in step with the preference (#42): hidden and
+  // Alt-summoned by default, pinned open when the user asks for it.
+  useEffect(() => {
+    window.stickyAPI?.setMenuBarVisible?.(!!tweaks.showMenuBar);
+  }, [tweaks.showMenuBar]);
 
   const T = themeTokens(tweaks.theme);
 
@@ -633,7 +644,7 @@ function AppInner({ store, setKey, exportNow, importNow, takeSnapshot, undo, red
         />
       )}
 
-      {(tweakActive || prefsOpen) && <TweakPanel T={T} tweaks={tweaks} update={updateTweak} onClose={()=>setPrefsOpen(false)}/>}
+      {(tweakActive || prefsOpen) && <TweakPanel T={T} tweaks={tweaks} update={updateTweak} onClose={()=>setPrefsOpen(false)} onImportFromImage={onImportFromImage}/>}
 
       <StatusBar T={T} tweaks={tweaks}
         folderName={currentFolderName}

@@ -32,7 +32,11 @@ isn't worth the flake risk for this project).
    rendered;
 4. returns drivers: `evaljs` (Runtime.evaluate), `click`/`dblclick`/`drag`
    (Input.dispatchMouseEvent), `type` (Input.insertText), `press`
-   (Input.dispatchKeyEvent), `noteBodyRect`, `screenshot`, and `close`.
+   (Input.dispatchKeyEvent, `press('a', {ctrl:true})` for chords),
+   `focusWindow` (Page.bringToFront + wait for `document.hasFocus()` —
+   required before any menu accelerator, which the browser process only
+   dispatches to the active window), `noteBodyRect`, `screenshot`, and
+   `close`.
 
 `close()` runs in an `after` hook even on failure: it kills only the
 Electron process group it spawned (tracked child PID — never a pkill) and
@@ -78,7 +82,13 @@ can never touch real user notes. Unset, the app behaves exactly as before.
 - `editing.e2e.mjs` — editor keystrokes against the real textarea: Enter
   continues ordered lists ("1. x" → "2. "), Tab renumbers-to-1 while
   nesting ("2. y" → "   1. y"), Enter continues blockquotes ("> q" → "> "),
-  and the typed body renders correctly after leaving edit mode.
+  and the typed body renders correctly after leaving edit mode. Then the
+  hidden menu bar (#42): the window carries no menu chrome
+  (`innerHeight === outerHeight` — a visible bar costs ~29px), Ctrl+A/C/V/X
+  still edit note text, and Ctrl+, still opens Preferences, which only the
+  menu's accelerator can do in the Electron build. Alt-summons-the-bar is
+  left to manual checking: a synthetic Alt over CDP lands in the menu bar's
+  own key handling about a third of the time and steals the keyboard.
 
 ## Verifying inside the flatpak (pre-release)
 

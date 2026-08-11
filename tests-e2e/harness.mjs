@@ -242,12 +242,38 @@ export async function launch({ seed = defaultSeed(), files = {}, whatsNew = fals
       Enter: { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 },
       Tab: { key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 },
       Escape: { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 },
+      Comma: { key: ',', code: 'Comma', windowsVirtualKeyCode: 188, nativeVirtualKeyCode: 188 },
+      a: { key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, nativeVirtualKeyCode: 65 },
+      c: { key: 'c', code: 'KeyC', windowsVirtualKeyCode: 67, nativeVirtualKeyCode: 67 },
+      v: { key: 'v', code: 'KeyV', windowsVirtualKeyCode: 86, nativeVirtualKeyCode: 86 },
+      x: { key: 'x', code: 'KeyX', windowsVirtualKeyCode: 88, nativeVirtualKeyCode: 88 },
     };
-    const press = async (name) => {
+    // ctrl/alt send the chord Chromium expects: 'rawKeyDown' (never 'keyDown',
+    // which would also produce a character) plus the CDP modifier bitmask
+    // (1 = Alt, 2 = Ctrl) on both halves of the press.
+    const press = async (name, { ctrl = false, alt = false } = {}) => {
       const k = KEYS[name];
       if (!k) throw new Error(`unknown key ${name}`);
-      await cmd('Input.dispatchKeyEvent', { type: 'keyDown', ...k });
-      await cmd('Input.dispatchKeyEvent', { type: 'keyUp', ...k });
+      const modifiers = (alt ? 1 : 0) | (ctrl ? 2 : 0);
+      if (!modifiers) {
+        await cmd('Input.dispatchKeyEvent', { type: 'keyDown', ...k });
+        await cmd('Input.dispatchKeyEvent', { type: 'keyUp', ...k });
+        return;
+      }
+      await cmd('Input.dispatchKeyEvent', { type: 'rawKeyDown', modifiers, ...k });
+      await cmd('Input.dispatchKeyEvent', { type: 'keyUp', modifiers, ...k });
+    };
+
+    // Make the window the active one and wait until the page agrees. A menu
+    // accelerator (Ctrl+,) is dispatched by the BROWSER process to the window
+    // the desktop considers active, so a test that presses one has to own the
+    // focus first — otherwise the keystroke goes nowhere and the test fails
+    // for a reason that has nothing to do with the app. Plain typing and the
+    // clipboard chords need none of this: the renderer serves those itself.
+    const focusWindow = async () => {
+      await cmd('Page.bringToFront');
+      await pollUntil(() => evaljs('document.hasFocus()'),
+        { timeout: 5000, interval: 100, label: 'the window to take focus' });
     };
 
     // Viewport rect of a note's rendered body (.md-body's padded container).
@@ -286,7 +312,7 @@ export async function launch({ seed = defaultSeed(), files = {}, whatsNew = fals
       await hydrated();
     }
 
-    return { cmd, evaljs, click, dblclick, drag, type, press, noteBodyRect, screenshot, pollUntil, sleep, userData, close };
+    return { cmd, evaljs, click, dblclick, drag, type, press, focusWindow, noteBodyRect, screenshot, pollUntil, sleep, userData, close };
   } catch (err) {
     await close();
     throw err;

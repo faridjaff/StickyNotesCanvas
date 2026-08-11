@@ -201,6 +201,7 @@ Each note in the JSON has these fields:
   - "id":     short string unique within the payload (e.g. "n1","n2"); used only to wire links and is remapped on paste.
   - "title":  string. Short heading. If the note has no obvious title, infer one from its first line.
   - "body":   string. Remaining content. Use "\\n" between lines. Markdown supported: # headings (all levels), - or * bullet lists, numbered lists, **bold**, *italic* or _italic_, \`inline code\`, fenced code blocks, blockquotes, tables, [links](url) and images (http/https only), \`\`\`mermaid diagrams.
+  - "color":  one of "red","pink","blue","green","yellow","peach","lilac","white". Match the note's real colour in the image; omit the field if you can't tell and one is picked for you.
   - "w":      integer pixel width. Use 260 by default; use ~300 for notes with wide/long lines.
   - "h":      integer pixel height. Use 180 by default; use 220–280 for notes with lots of text.
   - "pinned": false
@@ -220,7 +221,7 @@ Groceries
 Call mom
 
 <!-- sticky-notes/v1 -->
-{"notes":[{"id":"n1","title":"Groceries","body":"- eggs\\n- milk\\n- bread","w":260,"h":200,"pinned":false},{"id":"n2","title":"Call mom","body":"","w":260,"h":180,"pinned":false}],"links":[]}
+{"notes":[{"id":"n1","title":"Groceries","body":"- eggs\\n- milk\\n- bread","color":"yellow","w":260,"h":200,"pinned":false},{"id":"n2","title":"Call mom","body":"","color":"pink","w":260,"h":180,"pinned":false}],"links":[]}
 </example>
 
 <example label="single note with markdown body">
@@ -237,7 +238,9 @@ Project ideas
 </example>
 
 <rules>
-The importer is a strict JSON parser. These will cause silent rejection:
+The importer is a strict JSON parser. Any of these and the import fails — the
+app will either show an error or paste your reply as one plain note instead of
+the notes you extracted:
 - Single quotes anywhere in the JSON (use double quotes only).
 - Trailing commas in the JSON (e.g., \`[{...},]\` or \`{...,}\`).
 - Real newline characters inside a JSON string value (escape as \\n).
@@ -2861,7 +2864,8 @@ function FoldersDrawer({T, tweaks, folders, notes, currentFolder, setCurrentFold
 /* ==================================================================== */
 /* TWEAK PANEL                                                           */
 /* ==================================================================== */
-function TweakPanel({T, tweaks, update, onClose}) {
+function TweakPanel({T, tweaks, update, onClose, onImportFromImage}) {
+  const act = (fn) => () => { onClose && onClose(); fn(); };
   return (
     <div style={{
       position:'fixed', right:16, bottom:44, width:280, zIndex:90000,
@@ -2905,7 +2909,36 @@ function TweakPanel({T, tweaks, update, onClose}) {
         <input type="checkbox" checked={!!tweaks.hideNoteTitles} onChange={e=>update({hideNoteTitles:e.target.checked})}/>
         <span style={{fontSize:12}}>Hide title on every note</span>
       </div>
+      {!!window.stickyAPI && (
+        <Fragment>
+          <Label>Menu bar</Label>
+          <div style={{display:'flex', alignItems:'center', gap:8}}>
+            <input type="checkbox" checked={!!tweaks.showMenuBar} onChange={e=>update({showMenuBar:e.target.checked})}/>
+            <span style={{fontSize:12}}>Always show the menu bar</span>
+          </div>
+        </Fragment>
+      )}
+      {onImportFromImage && (
+        <Fragment>
+          <Label>More</Label>
+          <PanelAction T={T} onClick={act(onImportFromImage)}>Import notes from image…</PanelAction>
+        </Fragment>
+      )}
     </div>
+  );
+}
+// A full-width text row inside the Preferences panel — the menu bar is
+// hidden by default (#42) and this action is worth surfacing where people
+// will find it.
+function PanelAction({T, onClick, children}) {
+  return (
+    <button onClick={onClick} {...hoverProps(T)} style={{
+      display:'block', width:'100%', textAlign:'left',
+      padding:'7px 8px', background:'transparent', border:'none',
+      color:T.panelText, font:'inherit', fontSize:12, cursor:'pointer', borderRadius:6,
+    }}>
+      {children}
+    </button>
   );
 }
 function Label({children}) {
@@ -2987,4 +3020,4 @@ function StatusBar({T, tweaks, folderName, noteCount, folderCount, onOpenPrefs})
   );
 }
 
-Object.assign(window, { AppGlyph, ColorDots, ConfirmDialog, ContextMenu, Desktop, EmptyState, FolderIcon, FolderTree, FoldersDrawer, HomeIcon, IMPORT_FROM_IMAGE_PROMPT, ImportFromImageDialog, InfoDialog, KeyHint, Label, Loading, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, MobileDemoBanner, PasteErrorToast, Segmented, StatusBar, StickyNote, TopChrome, TweakPanel, UpdateBanner, btnS, kbdS, zBtn });
+Object.assign(window, { AppGlyph, ColorDots, ConfirmDialog, ContextMenu, Desktop, EmptyState, FolderIcon, FolderTree, FoldersDrawer, HomeIcon, IMPORT_FROM_IMAGE_PROMPT, ImportFromImageDialog, InfoDialog, KeyHint, Label, Loading, MOBILE_BANNER_DISMISSED_KEY, MOBILE_BANNER_MAX_WIDTH, MobileDemoBanner, PanelAction, PasteErrorToast, Segmented, StatusBar, StickyNote, TopChrome, TweakPanel, UpdateBanner, btnS, kbdS, zBtn });

@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('stickyAPI', {
   // file-chooser portal under flatpak), reads and stores the chosen file,
   // and resolves { ok, ref } / { ok:false, canceled:true }.
   pickImage: () => ipcRenderer.invoke('images:pick'),
+  // Pin the menu bar open, or return it to Alt-summoned (#42).
+  setMenuBarVisible: (show) => ipcRenderer.invoke('window:menu-bar', !!show),
 
   // Version of the running Electron build, captured at preload time so the
   // renderer can synchronously compare to the latest GitHub release tag.

@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.0.1...v2.1.0) (2026-08-11)
+
+
+### Features
+
+* add images from a file by drag and drop or the file picker ([0ba02e6](https://github.com/faridjaff/StickyNotesCanvas/commit/0ba02e62cce7eb07efe9e0d82f7214489bdfb35c))
+
+
+### Bug Fixes
+
+* give each editing session its own undo step ([e9a7dc7](https://github.com/faridjaff/StickyNotesCanvas/commit/e9a7dc7ef13968f78c81d6e8c56258091184a81b))
+* read pasted images from the clipboard in the main process ([79b0272](https://github.com/faridjaff/StickyNotesCanvas/commit/79b02722c3dc357fc081c20ac5586dd9d9103626))
+
 ## [2.0.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.0.0...v2.0.1) (2026-08-11)
 
 

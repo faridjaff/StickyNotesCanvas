@@ -145,6 +145,13 @@ let _md = null;
 function getMarkdownIt() {
   if (_md) return _md;
   const md = markdownit({ html: false, linkify: true, breaks: true });
+  // Two CommonMark rules are deliberately off, per the old-vs-new compat
+  // corpus (tests/compat.test.mjs): 'reference' made "[1]: url" definition
+  // lines vanish from notes written before the markdown-it swap, and
+  // 'code' turned any casually 4-space/tab-indented line into a code
+  // block. Fenced ``` blocks and inline [text](url) links cover both
+  // needs without the surprises.
+  md.disable(['reference', 'code']);
   md.validateLink = url => /^https?:\/\//i.test(url);
   // Restore the leading/trailing spaces markdown-it trims off plain
   // paragraph lines (issue #26: the textarea shows them, so the preview

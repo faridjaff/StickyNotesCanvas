@@ -1,5 +1,37 @@
 # Changelog
 
+## [2.0.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.8.0...v2.0.0) (2026-08-11)
+
+
+### Features
+
+* add download item to note context menu ([a6a350c](https://github.com/faridjaff/StickyNotesCanvas/commit/a6a350c59a31fd4e733a5abb877cc7055ec7395a)), closes [#28](https://github.com/faridjaff/StickyNotesCanvas/issues/28)
+* adopt markdown-it for full CommonMark support ([279d9fd](https://github.com/faridjaff/StickyNotesCanvas/commit/279d9fd23ac70391ca1358868783d3b429f0d722)), closes [#21](https://github.com/faridjaff/StickyNotesCanvas/issues/21) [#32](https://github.com/faridjaff/StickyNotesCanvas/issues/32)
+* paste images into notes ([1c91b5f](https://github.com/faridjaff/StickyNotesCanvas/commit/1c91b5f7e730fe29e742445f51f91e4575d65d98)), closes [#25](https://github.com/faridjaff/StickyNotesCanvas/issues/25)
+* paste plain text on the canvas as a new note ([cb3ac9a](https://github.com/faridjaff/StickyNotesCanvas/commit/cb3ac9a53042e2bfe305321fc2f3ba0a5a22c39e)), closes [#29](https://github.com/faridjaff/StickyNotesCanvas/issues/29)
+* render Mermaid diagrams in code fences ([4070065](https://github.com/faridjaff/StickyNotesCanvas/commit/407006543018c0baa4d8233e60ac726457802e71)), closes [#31](https://github.com/faridjaff/StickyNotesCanvas/issues/31)
+* select note text in preview without entering edit mode ([a808cbe](https://github.com/faridjaff/StickyNotesCanvas/commit/a808cbee19b79195d500d2aa3a35a59ec0e9789b)), closes [#30](https://github.com/faridjaff/StickyNotesCanvas/issues/30)
+* show a one-time what's new note after updating ([3f63b3c](https://github.com/faridjaff/StickyNotesCanvas/commit/3f63b3c80f335c83f14978028e498404add5f1b1))
+* support pinch-to-zoom gestures ([1a714bd](https://github.com/faridjaff/StickyNotesCanvas/commit/1a714bd9bbdc3d437ea120cd86e3a06b965be846)), closes [#17](https://github.com/faridjaff/StickyNotesCanvas/issues/17)
+
+
+### Bug Fixes
+
+* explain unsupported and web-demo image pastes with a toast ([fc41bbf](https://github.com/faridjaff/StickyNotesCanvas/commit/fc41bbf872becea3812e0391bef0c98c146f1da4))
+* improve touch dragging for sticky notes ([4d71890](https://github.com/faridjaff/StickyNotesCanvas/commit/4d7189049bfa882a3ec911c49b6921b964acd39b)), closes [#18](https://github.com/faridjaff/StickyNotesCanvas/issues/18)
+* keep reference lines and indented text rendering as plain text ([0bcc3b9](https://github.com/faridjaff/StickyNotesCanvas/commit/0bcc3b9c4faa8a16b201da1319f794b200afcda2))
+* render preview whitespace identical to edit mode ([e840165](https://github.com/faridjaff/StickyNotesCanvas/commit/e8401659b486f7f08a62af5d0e2a9ca886a589a6)), closes [#26](https://github.com/faridjaff/StickyNotesCanvas/issues/26)
+
+
+### Reverts
+
+* paste-error toasts for unsupported and web-demo image pastes ([60edc8a](https://github.com/faridjaff/StickyNotesCanvas/commit/60edc8afa6efa4e8fbf21dd1c727eafa16e76278))
+
+
+### Miscellaneous Chores
+
+* cut the 2.0 major release ([45be2be](https://github.com/faridjaff/StickyNotesCanvas/commit/45be2be57a5eb6f4800b3ef3a863ea964aa065b3))
+
 ## [1.8.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v1.7.1...v1.8.0) (2026-07-12)
 
 

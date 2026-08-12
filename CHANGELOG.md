@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.2.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.1.0...v2.2.0) (2026-08-12)
+
+
+### Features
+
+* hide the menu bar by default ([09699a7](https://github.com/faridjaff/StickyNotesCanvas/commit/09699a7dce81cb110576fbdc113073cde6a7558b)), closes [#42](https://github.com/faridjaff/StickyNotesCanvas/issues/42)
+* import a markdown file as a note ([643bba6](https://github.com/faridjaff/StickyNotesCanvas/commit/643bba6c2769da6fc919fa1ec7c3c92cb807d7aa)), closes [#44](https://github.com/faridjaff/StickyNotesCanvas/issues/44)
+* include images in backups and copied notes ([c9aadf9](https://github.com/faridjaff/StickyNotesCanvas/commit/c9aadf9e161169e7904c36cbf47db0de84fd4754)), closes [#38](https://github.com/faridjaff/StickyNotesCanvas/issues/38)
+* open the editor at the double-clicked word ([f3021b7](https://github.com/faridjaff/StickyNotesCanvas/commit/f3021b7b0312542fd602e4afd7a4ab1a7aeab5ae)), closes [#35](https://github.com/faridjaff/StickyNotesCanvas/issues/35)
+* zoom the canvas with keyboard shortcuts ([e195e63](https://github.com/faridjaff/StickyNotesCanvas/commit/e195e634f130bd076e0823733c30c2b64b3b7c6d)), closes [#45](https://github.com/faridjaff/StickyNotesCanvas/issues/45)
+
+
+### Bug Fixes
+
+* make hover states visible in every theme ([e8de445](https://github.com/faridjaff/StickyNotesCanvas/commit/e8de44538a0d69923ea27ad699794959a8779d7f)), closes [#49](https://github.com/faridjaff/StickyNotesCanvas/issues/49)
+
 ## [2.1.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.0.1...v2.1.0) (2026-08-11)
 
 

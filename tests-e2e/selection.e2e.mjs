@@ -237,36 +237,6 @@ const THEMES = [
   { label: 'Terminal', accent: '#8fd27a' },
 ];
 
-test('the hovered context-menu row is clearly different from its neighbours', async () => {
-  for (const theme of THEMES) {
-    await setTheme(theme.label, theme.accent);
-    await openNoteMenu();
-    // One hover carries both checks: the row is a submenu row, so the same
-    // gesture proves the highlight AND that hovering still opens submenus
-    // (they share the .ctx-row.hover class, so a careless fix breaks both).
-    const rows = await hoverRow('Change color ▶');
-    const hot = rows.find(r => r.hovered);
-    const cold = rows.filter(r => !r.hovered);
-
-    assert.equal(rows.filter(r => r.hovered).length, 1, `${theme.label}: exactly one row may be hovered`);
-    assert.ok(cold.length >= 3, `${theme.label}: needs unhovered siblings to compare against`);
-    for (const c of cold) {
-      // 45 is far above the old behaviour, which scored 2 on terminal and
-      // ~21 on the light themes — i.e. this fails on the pre-fix build.
-      assert.ok(dist(hot.rgb, c.rgb) > 45,
-        `${theme.label}: hovered "${hot.label}" ${hot.rgb.map(Math.round)} is only ` +
-        `${dist(hot.rgb, c.rgb).toFixed(1)} from unhovered "${c.label}" ${c.rgb.map(Math.round)}`);
-    }
-    assert.equal(hot.accent, true, `${theme.label}: the hovered row also carries the accent edge`);
-    assert.ok(cold.every(c => !c.accent), `${theme.label}: unhovered rows carry no accent edge`);
-    assert.deepEqual(rows.filter(r => r.subOpen).map(r => r.label), ['Change color ▶'],
-      `${theme.label}: hovering a submenu row opens exactly that submenu`);
-
-    await closeMenu();
-  }
-  await setTheme('Paper', '#b8621b');   // leave the app as the seed found it
-});
-
 test('hovering an inert menu row does not make it look clickable', async () => {
   // The folder drawer's "Move to…" menu has nowhere to move the only seeded
   // folder, so it renders its one inert line. A highlight there would

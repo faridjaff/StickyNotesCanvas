@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.2.0...v2.2.1) (2026-08-12)
+
+
+### Bug Fixes
+
+* make markdown headings clearly larger than body text ([7c8a88d](https://github.com/faridjaff/StickyNotesCanvas/commit/7c8a88df317be5cffbe94de5a87a6cf9a9599a39))
+
 ## [2.2.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.1.0...v2.2.0) (2026-08-12)
 
 

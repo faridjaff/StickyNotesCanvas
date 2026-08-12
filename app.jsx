@@ -774,10 +774,10 @@ globalStyle.textContent = `
      explicit empty paragraphs). Every block element markdown-it can emit
      keeps that flat rhythm: margin 0, no vertical padding surprises. */
   .md-body { white-space: pre-wrap; overflow-wrap: break-word; }
-  .md-body h3 { font-size: 1.05em; margin: 0; font-weight: 700; }
-  .md-body h4 { font-size: 1em; margin: 0; font-weight: 700; opacity: .85; }
-  .md-body h5 { font-size: .92em; margin: 0; font-weight: 700; opacity: .75; letter-spacing: .02em; }
-  .md-body h6 { font-size: .85em; margin: 0; font-weight: 700; opacity: .6; text-transform: uppercase; letter-spacing: .05em; }
+  .md-body h3 { font-size: 1.6em; margin: 0; font-weight: 700; line-height: 1.25; }
+  .md-body h4 { font-size: 1.35em; margin: 0; font-weight: 700; line-height: 1.3; }
+  .md-body h5 { font-size: 1.15em; margin: 0; font-weight: 700; opacity: .9; }
+  .md-body h6 { font-size: 1em; margin: 0; font-weight: 700; opacity: .75; text-transform: uppercase; letter-spacing: .05em; }
   .md-body p { margin: 0; }
   .md-body ul { margin: 0; padding-left: 18px; }
   .md-body ol { margin: 0; padding-left: 18px; }

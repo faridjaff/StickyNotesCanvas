@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.3.0](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.2.1...v2.3.0) (2026-10-26)
+
+
+### Features
+
+* add a note text size slider to Preferences ([0966d91](https://github.com/faridjaff/StickyNotesCanvas/commit/0966d91005ab7cf96d95b8030bb5ea359137c6e3)), closes [#67](https://github.com/faridjaff/StickyNotesCanvas/issues/67)
+* add clickable task-list checkboxes ([c12c762](https://github.com/faridjaff/StickyNotesCanvas/commit/c12c762a8ed191cdc588685131896afe366c79c4)), closes [#65](https://github.com/faridjaff/StickyNotesCanvas/issues/65)
+* add frontmatter to downloaded markdown files ([2ef1c45](https://github.com/faridjaff/StickyNotesCanvas/commit/2ef1c4543b70a4d22da7145722738d014573a9c6)), closes [#40](https://github.com/faridjaff/StickyNotesCanvas/issues/40)
+* add Paste to the note context menu ([b71cf48](https://github.com/faridjaff/StickyNotesCanvas/commit/b71cf48c90b927048fe06d398b1a686c1a8fb900)), closes [#59](https://github.com/faridjaff/StickyNotesCanvas/issues/59)
+* change a folder's color from the drawer ([602d9fe](https://github.com/faridjaff/StickyNotesCanvas/commit/602d9fea14ce5b8ccfc6b41a3a4e4a2d016f0e96)), closes [#55](https://github.com/faridjaff/StickyNotesCanvas/issues/55)
+* choose where notes are saved (File menu) ([43d868f](https://github.com/faridjaff/StickyNotesCanvas/commit/43d868ffb45826382c3f0125cb83e59e7e0a4fe2)), closes [#68](https://github.com/faridjaff/StickyNotesCanvas/issues/68)
+* follow the system's light or dark appearance ([289b545](https://github.com/faridjaff/StickyNotesCanvas/commit/289b545ed6444d6e94791c92022ef58a4dd73f1a)), closes [#43](https://github.com/faridjaff/StickyNotesCanvas/issues/43)
+* make the web version installable as an app ([cb98948](https://github.com/faridjaff/StickyNotesCanvas/commit/cb989486a1959443b9f87cac976f867c3720927e)), closes [#60](https://github.com/faridjaff/StickyNotesCanvas/issues/60)
+* pan the canvas with one or two fingers on touchscreens ([79b784c](https://github.com/faridjaff/StickyNotesCanvas/commit/79b784c1013769c112feae157ba8cb4caed27330)), closes [#41](https://github.com/faridjaff/StickyNotesCanvas/issues/41)
+
+
+### Bug Fixes
+
+* ask before deleting notes with the Delete or Backspace key ([1706ff3](https://github.com/faridjaff/StickyNotesCanvas/commit/1706ff32a206570abc2ba51259db66fd3b8ae2bd)), closes [#47](https://github.com/faridjaff/StickyNotesCanvas/issues/47)
+* keep the drawer's folder menu on screen for low rows ([ae602ad](https://github.com/faridjaff/StickyNotesCanvas/commit/ae602ad91aebd7f931883ee7aea641b261ae27d3))
+* render --- under a line as a divider, not a heading ([d07b215](https://github.com/faridjaff/StickyNotesCanvas/commit/d07b215631f7c1a1e4c482ee9f0184d7f8ca1ad6)), closes [#63](https://github.com/faridjaff/StickyNotesCanvas/issues/63)
+* restore a maximized window as maximized ([e00c2b0](https://github.com/faridjaff/StickyNotesCanvas/commit/e00c2b02e388d7ff04ca35f4da2cb612ea3b9b4c)), closes [#62](https://github.com/faridjaff/StickyNotesCanvas/issues/62)
+* stop space-to-pan from re-clicking the focused button ([c47cd17](https://github.com/faridjaff/StickyNotesCanvas/commit/c47cd17f9fba9989a038acd481fefe04f5c2d0cd)), closes [#54](https://github.com/faridjaff/StickyNotesCanvas/issues/54)
+* wrap the note editor at the same width as the rendered note ([b6d31ef](https://github.com/faridjaff/StickyNotesCanvas/commit/b6d31ef987c8f9dad22cb1a831489be5ddf207e3))
+
 ## [2.2.1](https://github.com/faridjaff/StickyNotesCanvas/compare/v2.2.0...v2.2.1) (2026-08-12)
 
 
